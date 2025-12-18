@@ -860,6 +860,7 @@ function logMethod2_VideoAssetDetails(campaignName) {
 
   try {
     // Query video assets with performance from ad_group_ad_asset_view
+    // Note: video_views metric not supported for this view
     var query =
       "SELECT " +
       "campaign.name, " +
@@ -872,7 +873,6 @@ function logMethod2_VideoAssetDetails(campaignName) {
       "metrics.clicks, " +
       "metrics.conversions, " +
       "metrics.all_conversions, " +
-      "metrics.video_views, " +
       "metrics.cost_micros " +
       "FROM ad_group_ad_asset_view " +
       "WHERE campaign.name = '" + campaignName.replace(/'/g, "\\'") + "' " +
@@ -898,7 +898,6 @@ function logMethod2_VideoAssetDetails(campaignName) {
           clicks: 0,
           conversions: 0,
           allConversions: 0,
-          videoViews: 0,
           cost: 0
         };
       }
@@ -908,7 +907,6 @@ function logMethod2_VideoAssetDetails(campaignName) {
       videoMap[assetId].clicks += row.metrics.clicks || 0;
       videoMap[assetId].conversions += row.metrics.conversions || 0;
       videoMap[assetId].allConversions += row.metrics.allConversions || 0;
-      videoMap[assetId].videoViews += row.metrics.videoViews || 0;
       videoMap[assetId].cost += row.metrics.costMicros || 0;
     }
 
@@ -931,7 +929,6 @@ function logMethod2_VideoAssetDetails(campaignName) {
       Logger.log('   Performance Label: ' + (v.performanceLabel || 'N/A'));
       Logger.log('   Impressions: ' + v.impressions.toLocaleString());
       Logger.log('   Clicks: ' + v.clicks.toLocaleString() + ' (CTR: ' + ctr + '%)');
-      Logger.log('   Video Views: ' + v.videoViews.toLocaleString());
       Logger.log('   Conversions: ' + v.conversions.toFixed(2) + ' | All Conv: ' + v.allConversions.toFixed(2));
       Logger.log('   Cost: $' + costFormatted);
       Logger.log('');
@@ -1376,4 +1373,313 @@ function logMethod7_AdGroupAssets(campaignName) {
   }
 }
 
+
+// ============================================================================
+// MUTATION TEST FUNCTIONS
+// ============================================================================
+
+/**
+ * Test mutation of campaign assets
+ * Campaign: 21509897472
+ * Ad Group: 162629008222
+ */
+function testMutateAppAd() {
+  var customerId = '3342315080';
+  var campaignId = '21509897472';
+  var adGroupId = '162629008222';
+
+  Logger.log('');
+  Logger.log('################################################################################');
+  Logger.log('# APP AD MUTATION TEST');
+  Logger.log('# Customer: ' + customerId);
+  Logger.log('# Campaign: ' + campaignId);
+  Logger.log('# Ad Group: ' + adGroupId);
+  Logger.log('################################################################################');
+  Logger.log('');
+
+  // Step 1: Get the ad ID and current assets
+  Logger.log('=== STEP 1: Get Current Ad and Assets ===');
+  var adInfo = getCurrentAdAssets(customerId, campaignId, adGroupId);
+
+  if (!adInfo) {
+    Logger.log('ERROR: Could not find ad for this campaign/ad group');
+    return;
+  }
+
+  Logger.log('Found Ad ID: ' + adInfo.adId);
+  Logger.log('Current Headlines: ' + adInfo.headlines.length);
+  Logger.log('Current Descriptions: ' + adInfo.descriptions.length);
+  Logger.log('Current Images: ' + adInfo.images.length);
+  Logger.log('Current Videos: ' + adInfo.videos.length);
+  Logger.log('');
+
+  // Step 2: Test headline mutation
+  Logger.log('=== STEP 2: Test Headline Mutation ===');
+  testMutateHeadline(customerId, adInfo);
+
+  // Step 3: Test image mutation (swap one image)
+  Logger.log('');
+  Logger.log('=== STEP 3: Test Image Mutation ===');
+  testMutateImage(customerId, adInfo);
+
+  // Step 4: Test video mutation (swap one video)
+  Logger.log('');
+  Logger.log('=== STEP 4: Test Video Mutation ===');
+  testMutateVideo(customerId, adInfo);
+
+  Logger.log('');
+  Logger.log('################################################################################');
+  Logger.log('# MUTATION TEST COMPLETE');
+  Logger.log('################################################################################');
+}
+
+
+/**
+ * Get current ad and all its assets
+ */
+function getCurrentAdAssets(customerId, campaignId, adGroupId) {
+  try {
+    var query =
+      "SELECT " +
+      "ad_group_ad.ad.id, " +
+      "ad_group_ad.ad.resource_name, " +
+      "ad_group_ad.ad.app_ad.headlines, " +
+      "ad_group_ad.ad.app_ad.descriptions, " +
+      "ad_group_ad.ad.app_ad.images, " +
+      "ad_group_ad.ad.app_ad.youtube_videos, " +
+      "ad_group_ad.status " +
+      "FROM ad_group_ad " +
+      "WHERE campaign.id = " + campaignId + " " +
+      "AND ad_group.id = " + adGroupId + " " +
+      "AND ad_group_ad.status != 'REMOVED' " +
+      "LIMIT 1";
+
+    var result = AdsApp.search(query);
+
+    if (!result.hasNext()) {
+      return null;
+    }
+
+    var row = result.next();
+    var ad = row.adGroupAd.ad;
+    var appAd = ad.appAd || {};
+
+    return {
+      adId: ad.id,
+      resourceName: ad.resourceName,
+      status: row.adGroupAd.status,
+      headlines: appAd.headlines || [],
+      descriptions: appAd.descriptions || [],
+      images: appAd.images || [],
+      videos: appAd.youtubeVideos || []
+    };
+
+  } catch (error) {
+    Logger.log('Error getting ad assets: ' + error.message);
+    return null;
+  }
+}
+
+
+/**
+ * Test headline mutation - add a new headline while keeping existing ones
+ */
+function testMutateHeadline(customerId, adInfo) {
+  Logger.log('Current headlines:');
+  for (var i = 0; i < adInfo.headlines.length; i++) {
+    Logger.log('  ' + (i + 1) + '. ' + adInfo.headlines[i].asset);
+  }
+
+  // Build headlines array - keep all existing + we could add a new text headline
+  // For app ads, headlines use asset references, not direct text
+  // We'll just log what would be needed
+
+  Logger.log('');
+  Logger.log('NOTE: App Ad headlines use asset references (not direct text).');
+  Logger.log('To add a new headline, you would need to:');
+  Logger.log('  1. First create a TEXT asset with the headline text');
+  Logger.log('  2. Then reference that asset in the app_ad.headlines array');
+  Logger.log('');
+
+  // Example mutation structure (logging only, not executing)
+  Logger.log('Example mutation structure for headlines:');
+  Logger.log(JSON.stringify({
+    adOperation: {
+      update: {
+        resourceName: 'customers/' + customerId + '/ads/' + adInfo.adId,
+        appAd: {
+          headlines: adInfo.headlines.concat([{
+            asset: 'customers/' + customerId + '/assets/NEW_ASSET_ID'
+          }])
+        }
+      },
+      updateMask: 'app_ad.headlines'
+    }
+  }, null, 2));
+}
+
+
+/**
+ * Test image mutation - swap one image
+ */
+function testMutateImage(customerId, adInfo) {
+  Logger.log('Current images (' + adInfo.images.length + '):');
+  for (var i = 0; i < Math.min(5, adInfo.images.length); i++) {
+    Logger.log('  ' + (i + 1) + '. ' + adInfo.images[i].asset);
+  }
+  if (adInfo.images.length > 5) {
+    Logger.log('  ... and ' + (adInfo.images.length - 5) + ' more');
+  }
+
+  Logger.log('');
+  Logger.log('To swap an image, keep all current images except one, and add a different one.');
+  Logger.log('');
+
+  // Build mutation - remove first image, keep the rest
+  if (adInfo.images.length > 1) {
+    var newImages = adInfo.images.slice(1); // Remove first image
+
+    Logger.log('Example: Remove first image, keep ' + newImages.length + ' remaining');
+    Logger.log('');
+
+    // Try the actual mutation
+    Logger.log('Attempting mutation...');
+    try {
+      var mutationResult = AdsApp.mutate({
+        adOperation: {
+          update: {
+            resourceName: 'customers/' + customerId + '/ads/' + adInfo.adId,
+            appAd: {
+              images: newImages
+            }
+          },
+          updateMask: 'app_ad.images'
+        }
+      });
+
+      Logger.log('Mutation Success: ' + mutationResult.isSuccessful());
+      if (mutationResult.isSuccessful()) {
+        Logger.log('Resource: ' + mutationResult.getResourceName());
+      } else {
+        Logger.log('Error: ' + mutationResult.getErrorMessage());
+      }
+    } catch (error) {
+      Logger.log('Mutation Error: ' + error.message);
+    }
+  } else {
+    Logger.log('Not enough images to test removal');
+  }
+}
+
+
+/**
+ * Test video mutation - swap one video
+ */
+function testMutateVideo(customerId, adInfo) {
+  Logger.log('Current videos (' + adInfo.videos.length + '):');
+  for (var i = 0; i < Math.min(5, adInfo.videos.length); i++) {
+    Logger.log('  ' + (i + 1) + '. ' + adInfo.videos[i].asset);
+  }
+  if (adInfo.videos.length > 5) {
+    Logger.log('  ... and ' + (adInfo.videos.length - 5) + ' more');
+  }
+
+  Logger.log('');
+  Logger.log('To swap a video, keep all current videos except one, and add a different one.');
+  Logger.log('');
+
+  // Build mutation - remove first video, keep the rest
+  if (adInfo.videos.length > 1) {
+    var newVideos = adInfo.videos.slice(1); // Remove first video
+
+    Logger.log('Example: Remove first video, keep ' + newVideos.length + ' remaining');
+    Logger.log('');
+
+    // Try the actual mutation
+    Logger.log('Attempting mutation...');
+    try {
+      var mutationResult = AdsApp.mutate({
+        adOperation: {
+          update: {
+            resourceName: 'customers/' + customerId + '/ads/' + adInfo.adId,
+            appAd: {
+              youtubeVideos: newVideos
+            }
+          },
+          updateMask: 'app_ad.youtube_videos'
+        }
+      });
+
+      Logger.log('Mutation Success: ' + mutationResult.isSuccessful());
+      if (mutationResult.isSuccessful()) {
+        Logger.log('Resource: ' + mutationResult.getResourceName());
+      } else {
+        Logger.log('Error: ' + mutationResult.getErrorMessage());
+      }
+    } catch (error) {
+      Logger.log('Mutation Error: ' + error.message);
+    }
+  } else {
+    Logger.log('Not enough videos to test removal');
+  }
+}
+
+
+/**
+ * Full mutation test - update all asset types at once
+ * This keeps all existing assets and just logs what the mutation would look like
+ */
+function testFullMutation() {
+  var customerId = '3342315080';
+  var campaignId = '21509897472';
+  var adGroupId = '162629008222';
+
+  Logger.log('=== FULL MUTATION TEST ===');
+  Logger.log('');
+
+  var adInfo = getCurrentAdAssets(customerId, campaignId, adGroupId);
+
+  if (!adInfo) {
+    Logger.log('ERROR: Could not find ad');
+    return;
+  }
+
+  Logger.log('Ad ID: ' + adInfo.adId);
+  Logger.log('Resource Name: ' + adInfo.resourceName);
+  Logger.log('');
+
+  // Full mutation keeping all assets
+  var fullMutation = {
+    adOperation: {
+      update: {
+        resourceName: adInfo.resourceName,
+        appAd: {
+          headlines: adInfo.headlines,
+          descriptions: adInfo.descriptions,
+          images: adInfo.images,
+          youtubeVideos: adInfo.videos
+        }
+      },
+      updateMask: 'app_ad.headlines,app_ad.descriptions,app_ad.images,app_ad.youtube_videos'
+    }
+  };
+
+  Logger.log('Full mutation structure (no changes, just re-setting same assets):');
+  Logger.log(JSON.stringify(fullMutation, null, 2));
+
+  Logger.log('');
+  Logger.log('Attempting full mutation...');
+
+  try {
+    var result = AdsApp.mutate(fullMutation);
+    Logger.log('Success: ' + result.isSuccessful());
+    if (result.isSuccessful()) {
+      Logger.log('Resource: ' + result.getResourceName());
+    } else {
+      Logger.log('Error: ' + result.getErrorMessage());
+    }
+  } catch (error) {
+    Logger.log('Error: ' + error.message);
+  }
+}
 
