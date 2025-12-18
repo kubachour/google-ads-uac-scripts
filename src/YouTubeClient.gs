@@ -26,7 +26,6 @@ var YouTubeClient = (function() {
       });
 
       if (!response.items || response.items.length === 0) {
-        Logger.log('Playlist not found: ' + playlistId);
         return null;
       }
 
@@ -42,7 +41,6 @@ var YouTubeClient = (function() {
       };
 
     } catch (error) {
-      Logger.log('Error fetching playlist info: ' + error.message);
       return null;
     }
   }
@@ -53,8 +51,6 @@ var YouTubeClient = (function() {
    * @returns {Array} Array of video objects with full details
    */
   function getPlaylistVideosWithDetails(playlistId) {
-    Logger.log('Fetching videos from playlist: ' + playlistId);
-
     // Step 1: Get all playlist items (paginated)
     var playlistItems = [];
     var pageToken = null;
@@ -80,12 +76,10 @@ var YouTubeClient = (function() {
       }
 
       pageToken = response.nextPageToken;
-      Logger.log('Fetched ' + playlistItems.length + ' videos so far...');
 
     } while (pageToken);
 
     if (playlistItems.length === 0) {
-      Logger.log('No videos found in playlist');
       return [];
     }
 
@@ -102,7 +96,6 @@ var YouTubeClient = (function() {
       return buildVideoObject(item, detailsMap[videoId]);
     });
 
-    Logger.log('Total videos with details: ' + videos.length);
     return videos;
   }
 
@@ -138,7 +131,7 @@ var YouTubeClient = (function() {
         }
 
       } catch (error) {
-        Logger.log('Error fetching video details batch: ' + error.message);
+        // Silently continue with next batch
       }
     }
 

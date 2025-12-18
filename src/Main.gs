@@ -24,8 +24,7 @@ function main() {
  * Scheduled to run daily
  */
 function syncSourceAssets() {
-  Logger.log('=== Starting Source Asset Sync ===');
-  Logger.log('Time: ' + new Date().toISOString());
+  Logger.log('=== Source Asset Sync ===');
 
   try {
     initConfig();
@@ -33,29 +32,61 @@ function syncSourceAssets() {
     // Get configured language playlists
     var languages = getConfiguredLanguages();
     if (languages.length === 0) {
-      throw new Error('No playlists configured in Playlists sheet');
+      throw new Error('No playlists configured');
     }
-
-    Logger.log('Found ' + languages.length + ' language playlist(s): ' + languages.join(', '));
 
     // Sync all language playlists
     var allResults = [];
+    var successfulPlaylists = 0;
+    var failedPlaylists = 0;
+
     for (var i = 0; i < languages.length; i++) {
       var result = syncPlaylistByLanguage(languages[i]);
       allResults.push(result);
+
+      if (result.success) {
+        successfulPlaylists++;
+      } else {
+        failedPlaylists++;
+      }
     }
 
     // Aggregate results
     var summary = aggregateResults(allResults);
 
+    // Get campaign stats
+    var campaignStats = getCampaignStats();
+
     // Write to output spreadsheet
     writeVideosToSheet(allResults);
 
+    // Summary logging
     Logger.log('');
+    Logger.log('--- YouTube Playlists ---');
+    Logger.log('Playlists synced: ' + successfulPlaylists + ' success, ' + failedPlaylists + ' failed');
+    for (var j = 0; j < allResults.length; j++) {
+      var r = allResults[j];
+      if (r.success) {
+        Logger.log('  ' + r.language.toUpperCase() + ': ' + r.totalVideos + ' videos');
+      } else {
+        Logger.log('  ' + r.language.toUpperCase() + ': FAILED - ' + r.error);
+      }
+    }
+
+    Logger.log('');
+    Logger.log('--- Google Ads Campaigns ---');
+    Logger.log('Total campaigns: ' + campaignStats.total);
+    Logger.log('Active campaigns: ' + campaignStats.active);
+    Logger.log('Videos in campaigns: ' + campaignStats.uniqueVideos);
+
+    // Debug: Show where videos are actually linked
+    logGoogleAdsDebug();
+
+    Logger.log('');
+    Logger.log('--- Summary ---');
+    Logger.log('Total videos from YouTube: ' + summary.totalVideos);
+    Logger.log('Processing errors: ' + summary.errors);
     Logger.log('=== Sync Complete ===');
-    Logger.log('Total videos: ' + summary.totalVideos);
-    Logger.log('New videos: ' + summary.newVideos);
-    Logger.log('Errors: ' + summary.errors);
 
     return {
       success: true,
@@ -64,7 +95,7 @@ function syncSourceAssets() {
     };
 
   } catch (error) {
-    Logger.log('ERROR in syncSourceAssets: ' + error.message);
+    Logger.log('ERROR: ' + error.message);
     return {
       success: false,
       error: error.message
@@ -79,13 +110,9 @@ function syncSourceAssets() {
  * @returns {Object} Sync results for this language
  */
 function syncPlaylistByLanguage(language) {
-  Logger.log('');
-  Logger.log('--- Syncing playlist: ' + language.toUpperCase() + ' ---');
-
   var playlistId = getPlaylistForLanguage(language);
 
   if (!playlistId) {
-    Logger.log('No playlist configured for language: ' + language);
     return {
       language: language,
       success: false,
@@ -97,7 +124,6 @@ function syncPlaylistByLanguage(language) {
   var playlistInfo = YouTubeClient.getPlaylistInfo(playlistId);
 
   if (!playlistInfo) {
-    Logger.log('Could not access playlist: ' + playlistId);
     return {
       language: language,
       success: false,
@@ -105,13 +131,8 @@ function syncPlaylistByLanguage(language) {
     };
   }
 
-  Logger.log('Playlist: ' + playlistInfo.title);
-  Logger.log('Expected videos: ' + playlistInfo.videoCount);
-
   // Get all videos with details
   var videos = YouTubeClient.getPlaylistVideosWithDetails(playlistId);
-
-  Logger.log('Retrieved ' + videos.length + ' videos');
 
   // Process each video
   var results = {
@@ -138,17 +159,9 @@ function syncPlaylistByLanguage(language) {
       }
 
     } catch (error) {
-      Logger.log('Error processing video ' + videos[i].videoId + ': ' + error.message);
       results.errors++;
     }
   }
-
-  Logger.log('');
-  Logger.log(language.toUpperCase() + ' sync results:');
-  Logger.log('  Total: ' + results.totalVideos);
-  Logger.log('  New: ' + results.newVideos);
-  Logger.log('  Existing: ' + results.existingVideos);
-  Logger.log('  Errors: ' + results.errors);
 
   return results;
 }
@@ -164,29 +177,14 @@ function processVideo(video, language) {
   // Parse metadata from filename/title
   var parsed = parseVideoMetadata(video);
 
-  // Log what we found
-  Logger.log('');
-  Logger.log('Video: ' + video.title);
-  Logger.log('  ID: ' + video.videoId);
-  Logger.log('  Duration: ' + (video.durationFormatted || 'N/A'));
-  Logger.log('  Language: ' + language);
-
-  if (parsed.format) Logger.log('  Format: ' + parsed.format);
-  if (parsed.creator) Logger.log('  Creator: ' + parsed.creator);
-  if (parsed.source) Logger.log('  Source: ' + parsed.source);
-  if (parsed.date) Logger.log('  Date: ' + parsed.date);
-  if (parsed.message) Logger.log('  Message: ' + parsed.message);
-
-  // TODO: Check if video already exists in Notion Source Queue
-  // TODO: Create Source Queue entry if new
-
   return {
     videoId: video.videoId,
     title: video.title,
     language: language,
+    publishedAt: video.publishedAt || '',
     durationFormatted: video.durationFormatted || '',
     definition: video.definition || '',
-    isNew: true, // TODO: Check against existing records
+    isNew: true,
     parsed: parsed
   };
 }
@@ -458,7 +456,8 @@ function writeVideosToSheet(allResults) {
   var headers = [
     'Video ID',
     'Title',
-    'Language',
+    'Playlist Country',
+    'Upload Date',
     'Duration',
     'Quality',
     'Format',
@@ -468,6 +467,7 @@ function writeVideosToSheet(allResults) {
     'Type',
     'Message',
     'Creative Set ID',
+    'Asset ID',
     'Campaigns',
     'In Google Ads',
     'YouTube URL',
@@ -488,15 +488,23 @@ function writeVideosToSheet(allResults) {
       var video = result.processed[j];
       var parsed = video.parsed || {};
 
-      // Get campaigns for this video
-      var campaigns = campaignsByVideoId[video.videoId] || [];
-      var campaignNames = campaigns.join(', ');
-      var inGoogleAds = campaigns.length > 0 ? 'Yes' : 'No';
+      // Get campaigns and asset ID for this video
+      var videoInfo = campaignsByVideoId[video.videoId] || { campaigns: [], assetId: '' };
+      var campaignNames = videoInfo.campaigns.join(', ');
+      var assetId = videoInfo.assetId || '';
+      var inGoogleAds = videoInfo.campaigns.length > 0 ? 'Yes' : 'No';
+
+      // Get country from language code (uppercase for display)
+      var playlistCountry = (video.language || result.language || '').toUpperCase();
+
+      // Format upload date (from ISO to readable)
+      var uploadDate = video.publishedAt ? formatDate(video.publishedAt) : '';
 
       rows.push([
         video.videoId,
         video.title,
-        video.language || result.language,
+        playlistCountry,
+        uploadDate,
         video.durationFormatted || '',
         video.definition || '',
         parsed.format || '',
@@ -506,6 +514,7 @@ function writeVideosToSheet(allResults) {
         parsed.type || '',
         parsed.message || '',
         parsed.creativeSetId || '',
+        assetId,
         campaignNames,
         inGoogleAds,
         'https://www.youtube.com/watch?v=' + video.videoId,
@@ -529,11 +538,80 @@ function writeVideosToSheet(allResults) {
 
 
 /**
+ * Format ISO date string to readable format (YYYY-MM-DD)
+ * @param {string} isoDate - ISO date string
+ * @returns {string} Formatted date
+ */
+function formatDate(isoDate) {
+  if (!isoDate) return '';
+  try {
+    var date = new Date(isoDate);
+    var year = date.getFullYear();
+    var month = ('0' + (date.getMonth() + 1)).slice(-2);
+    var day = ('0' + date.getDate()).slice(-2);
+    return year + '-' + month + '-' + day;
+  } catch (e) {
+    return isoDate;
+  }
+}
+
+
+/**
+ * Get campaign statistics from Google Ads
+ * @returns {Object} Campaign stats
+ */
+function getCampaignStats() {
+  var stats = {
+    total: 0,
+    active: 0,
+    uniqueVideos: 0
+  };
+
+  try {
+    var assets = GoogleAdsClient.getVideoAssetsWithCampaigns();
+
+    var campaigns = {};
+    var videos = {};
+
+    for (var i = 0; i < assets.length; i++) {
+      var asset = assets[i];
+
+      // Track unique campaigns
+      if (!campaigns[asset.campaignId]) {
+        campaigns[asset.campaignId] = {
+          name: asset.campaignName,
+          status: asset.campaignStatus
+        };
+      }
+
+      // Track unique videos
+      videos[asset.videoId] = true;
+    }
+
+    stats.total = Object.keys(campaigns).length;
+    stats.uniqueVideos = Object.keys(videos).length;
+
+    // Count active campaigns
+    for (var campaignId in campaigns) {
+      if (campaigns[campaignId].status === 'ENABLED') {
+        stats.active++;
+      }
+    }
+
+  } catch (error) {
+    // Silently handle - stats will be 0
+  }
+
+  return stats;
+}
+
+
+/**
  * Get map of video ID to campaign names
  * @returns {Object} Map of videoId to array of campaign names
  */
 function getVideoCampaignMap() {
-  var campaignMap = {};
+  var videoMap = {};
 
   try {
     var assets = GoogleAdsClient.getVideoAssetsWithCampaigns();
@@ -541,25 +619,25 @@ function getVideoCampaignMap() {
     for (var i = 0; i < assets.length; i++) {
       var asset = assets[i];
       var videoId = asset.videoId;
-      var campaignName = asset.campaignName;
 
-      if (!campaignMap[videoId]) {
-        campaignMap[videoId] = [];
+      if (!videoMap[videoId]) {
+        videoMap[videoId] = {
+          campaigns: [],
+          assetId: asset.assetId || ''
+        };
       }
 
       // Only add campaign name if not already in list
-      if (campaignMap[videoId].indexOf(campaignName) === -1) {
-        campaignMap[videoId].push(campaignName);
+      if (asset.campaignName && videoMap[videoId].campaigns.indexOf(asset.campaignName) === -1) {
+        videoMap[videoId].campaigns.push(asset.campaignName);
       }
     }
 
-    Logger.log('Built campaign map for ' + Object.keys(campaignMap).length + ' videos');
-
   } catch (error) {
-    Logger.log('Warning: Could not fetch Google Ads campaigns: ' + error.message);
+    // Silently handle
   }
 
-  return campaignMap;
+  return videoMap;
 }
 
 
@@ -624,4 +702,288 @@ function testParseFilename() {
     Logger.log('  CS ID: ' + (parsed.creativeSetId || 'N/A'));
     Logger.log('');
   }
+}
+
+
+// ============================================================================
+// DEBUG FUNCTIONS
+// ============================================================================
+
+/**
+ * Log Google Ads debug info during main sync
+ * Shows counts from different asset tables to identify where videos live
+ */
+function logGoogleAdsDebug() {
+  Logger.log('');
+  Logger.log('--- Google Ads Debug ---');
+
+  // Test 1: Basic video assets
+  try {
+    var q1 = "SELECT asset.id FROM asset WHERE asset.type = 'YOUTUBE_VIDEO'";
+    var r1 = AdsApp.search(q1);
+    var c1 = 0;
+    while (r1.hasNext()) { r1.next(); c1++; }
+    Logger.log('Video assets in account: ' + c1);
+  } catch (e) {
+    Logger.log('Video assets query error: ' + e.message);
+  }
+
+  // Test 2: Campaign-level assets
+  try {
+    var q2 = "SELECT asset.id FROM campaign_asset WHERE asset.type = 'YOUTUBE_VIDEO'";
+    var r2 = AdsApp.search(q2);
+    var c2 = 0;
+    while (r2.hasNext()) { r2.next(); c2++; }
+    Logger.log('Videos at campaign level: ' + c2);
+  } catch (e) {
+    Logger.log('Campaign assets query error: ' + e.message);
+  }
+
+  // Test 3: Ad group-level assets
+  try {
+    var q3 = "SELECT asset.id FROM ad_group_asset WHERE asset.type = 'YOUTUBE_VIDEO'";
+    var r3 = AdsApp.search(q3);
+    var c3 = 0;
+    while (r3.hasNext()) { r3.next(); c3++; }
+    Logger.log('Videos at ad group level: ' + c3);
+  } catch (e) {
+    Logger.log('Ad group assets query error: ' + e.message);
+  }
+
+  // Test 4: Asset group assets (Performance Max)
+  try {
+    var q4 = "SELECT asset.id FROM asset_group_asset WHERE asset.type = 'YOUTUBE_VIDEO'";
+    var r4 = AdsApp.search(q4);
+    var c4 = 0;
+    while (r4.hasNext()) { r4.next(); c4++; }
+    Logger.log('Videos in asset groups (PMax): ' + c4);
+  } catch (e) {
+    Logger.log('Asset group query error: ' + e.message);
+  }
+
+  // Test 5: All campaigns
+  try {
+    var q5 = "SELECT campaign.id FROM campaign";
+    var r5 = AdsApp.search(q5);
+    var c5 = 0;
+    while (r5.hasNext()) { r5.next(); c5++; }
+    Logger.log('Total campaigns in account: ' + c5);
+  } catch (e) {
+    Logger.log('Campaigns query error: ' + e.message);
+  }
+
+  // Test 6: App campaigns with "performance" in name
+  try {
+    var q6 = "SELECT campaign.id, campaign.name, campaign.advertising_channel_type " +
+             "FROM campaign " +
+             "WHERE campaign.advertising_channel_type IN ('MULTI_CHANNEL', 'DISPLAY') " +
+             "AND campaign.name LIKE '%performance%'";
+    var r6 = AdsApp.search(q6);
+    var c6 = 0;
+    var appCampaignNames = [];
+    while (r6.hasNext()) {
+      var row = r6.next();
+      c6++;
+      if (c6 <= 3) appCampaignNames.push(row.campaign.name + ' (' + row.campaign.advertisingChannelType + ')');
+    }
+    Logger.log('App campaigns with "performance": ' + c6);
+    if (appCampaignNames.length > 0) {
+      Logger.log('  Sample: ' + appCampaignNames.join(', '));
+    }
+  } catch (e) {
+    Logger.log('App campaigns query error: ' + e.message);
+  }
+
+  // Test 7: Customer-level assets (account-wide)
+  try {
+    var q7 = "SELECT asset.id FROM customer_asset WHERE asset.type = 'YOUTUBE_VIDEO'";
+    var r7 = AdsApp.search(q7);
+    var c7 = 0;
+    while (r7.hasNext()) { r7.next(); c7++; }
+    Logger.log('Videos at customer (account) level: ' + c7);
+  } catch (e) {
+    Logger.log('Customer assets query error: ' + e.message);
+  }
+
+  // Test 8: Show sample video assets with their resource names
+  try {
+    var q8 = "SELECT asset.id, asset.name, asset.youtube_video_asset.youtube_video_id " +
+             "FROM asset WHERE asset.type = 'YOUTUBE_VIDEO' LIMIT 3";
+    var r8 = AdsApp.search(q8);
+    Logger.log('Sample video assets:');
+    while (r8.hasNext()) {
+      var row = r8.next();
+      Logger.log('  ID: ' + row.asset.id + ', VideoID: ' + row.asset.youtubeVideoAsset.youtubeVideoId);
+    }
+  } catch (e) {
+    Logger.log('Sample assets query error: ' + e.message);
+  }
+
+  // Test 9: App campaign ads with video assets
+  try {
+    var q9 = "SELECT " +
+             "campaign.id, campaign.name, " +
+             "ad_group.id, " +
+             "ad_group_ad.ad.id, " +
+             "ad_group_ad.ad.type, " +
+             "ad_group_ad.ad.app_ad.youtube_videos " +
+             "FROM ad_group_ad " +
+             "WHERE campaign.advertising_channel_type = 'MULTI_CHANNEL' " +
+             "AND campaign.name LIKE '%performance%' " +
+             "LIMIT 5";
+    var r9 = AdsApp.search(q9);
+    var c9 = 0;
+    Logger.log('App campaign ads with videos:');
+    while (r9.hasNext()) {
+      var row = r9.next();
+      c9++;
+      var videos = row.adGroupAd.ad.appAd.youtubeVideos || [];
+      Logger.log('  Campaign: ' + row.campaign.name);
+      Logger.log('  Ad type: ' + row.adGroupAd.ad.type);
+      Logger.log('  Videos in ad: ' + videos.length);
+      if (videos.length > 0) {
+        for (var v = 0; v < Math.min(videos.length, 2); v++) {
+          Logger.log('    - Asset: ' + videos[v].asset);
+        }
+      }
+    }
+    Logger.log('Total app ads checked: ' + c9);
+  } catch (e) {
+    Logger.log('App ads query error: ' + e.message);
+  }
+}
+
+
+/**
+ * Debug: Test Google Ads campaign query directly
+ * Use this to troubleshoot why campaigns might not be showing
+ */
+function debugGoogleAdsQuery() {
+  Logger.log('=== Google Ads Debug ===');
+  Logger.log('');
+
+  // Test 1: Basic video assets query
+  Logger.log('--- Test 1: Basic Video Assets ---');
+  try {
+    var query1 =
+      "SELECT " +
+        "asset.id, " +
+        "asset.name, " +
+        "asset.type, " +
+        "asset.youtube_video_asset.youtube_video_id, " +
+        "asset.youtube_video_asset.youtube_video_title " +
+      "FROM asset " +
+      "WHERE asset.type = 'YOUTUBE_VIDEO' " +
+      "LIMIT 10";
+
+    var result1 = AdsApp.search(query1);
+    var count1 = 0;
+
+    while (result1.hasNext()) {
+      var row = result1.next();
+      count1++;
+      Logger.log(count1 + '. Asset ID: ' + row.asset.id);
+      Logger.log('   Video ID: ' + row.asset.youtubeVideoAsset.youtubeVideoId);
+      Logger.log('   Title: ' + (row.asset.youtubeVideoAsset.youtubeVideoTitle || 'N/A'));
+      Logger.log('');
+    }
+
+    Logger.log('Total video assets found: ' + count1);
+  } catch (error) {
+    Logger.log('ERROR in Test 1: ' + error.message);
+  }
+
+  Logger.log('');
+  Logger.log('--- Test 2: Campaign Assets ---');
+  try {
+    var query2 =
+      "SELECT " +
+        "asset.id, " +
+        "asset.youtube_video_asset.youtube_video_id, " +
+        "campaign.id, " +
+        "campaign.name, " +
+        "campaign.status " +
+      "FROM campaign_asset " +
+      "WHERE asset.type = 'YOUTUBE_VIDEO' " +
+      "LIMIT 10";
+
+    var result2 = AdsApp.search(query2);
+    var count2 = 0;
+
+    while (result2.hasNext()) {
+      var row = result2.next();
+      count2++;
+      Logger.log(count2 + '. Video ID: ' + row.asset.youtubeVideoAsset.youtubeVideoId);
+      Logger.log('   Campaign: ' + row.campaign.name + ' (' + row.campaign.status + ')');
+      Logger.log('');
+    }
+
+    Logger.log('Total campaign-asset links found: ' + count2);
+  } catch (error) {
+    Logger.log('ERROR in Test 2: ' + error.message);
+  }
+
+  Logger.log('');
+  Logger.log('--- Test 3: Ad Group Assets ---');
+  try {
+    var query3 =
+      "SELECT " +
+        "asset.id, " +
+        "asset.youtube_video_asset.youtube_video_id, " +
+        "ad_group.id, " +
+        "ad_group.name, " +
+        "campaign.id, " +
+        "campaign.name " +
+      "FROM ad_group_asset " +
+      "WHERE asset.type = 'YOUTUBE_VIDEO' " +
+      "LIMIT 10";
+
+    var result3 = AdsApp.search(query3);
+    var count3 = 0;
+
+    while (result3.hasNext()) {
+      var row = result3.next();
+      count3++;
+      Logger.log(count3 + '. Video ID: ' + row.asset.youtubeVideoAsset.youtubeVideoId);
+      Logger.log('   Ad Group: ' + row.adGroup.name);
+      Logger.log('   Campaign: ' + row.campaign.name);
+      Logger.log('');
+    }
+
+    Logger.log('Total ad_group-asset links found: ' + count3);
+  } catch (error) {
+    Logger.log('ERROR in Test 3: ' + error.message);
+  }
+
+  Logger.log('');
+  Logger.log('--- Test 4: All Campaigns ---');
+  try {
+    var query4 =
+      "SELECT " +
+        "campaign.id, " +
+        "campaign.name, " +
+        "campaign.status, " +
+        "campaign.advertising_channel_type " +
+      "FROM campaign " +
+      "LIMIT 20";
+
+    var result4 = AdsApp.search(query4);
+    var count4 = 0;
+
+    while (result4.hasNext()) {
+      var row = result4.next();
+      count4++;
+      Logger.log(count4 + '. ' + row.campaign.name);
+      Logger.log('   Status: ' + row.campaign.status);
+      Logger.log('   Type: ' + row.campaign.advertisingChannelType);
+      Logger.log('');
+    }
+
+    Logger.log('Total campaigns found: ' + count4);
+  } catch (error) {
+    Logger.log('ERROR in Test 4: ' + error.message);
+  }
+
+  Logger.log('');
+  Logger.log('=== Debug Complete ===');
 }

@@ -12,8 +12,6 @@ var GoogleAdsClient = (function() {
    * @returns {Array} Array of video asset objects
    */
   function getVideoAssets() {
-    Logger.log('Fetching video assets from Google Ads...');
-
     var videoAssets = [];
 
     // Query video assets using GAQL
@@ -44,10 +42,8 @@ var GoogleAdsClient = (function() {
         });
       }
 
-      Logger.log('Found ' + videoAssets.length + ' video assets');
-
     } catch (error) {
-      Logger.log('Error fetching video assets: ' + error.message);
+      // Silently handle
     }
 
     return videoAssets;
@@ -59,8 +55,6 @@ var GoogleAdsClient = (function() {
    * @returns {Array} Array of video assets with campaign details
    */
   function getVideoAssetsWithCampaigns() {
-    Logger.log('Fetching video assets with campaign info...');
-
     var videoAssets = [];
 
     var query =
@@ -95,10 +89,8 @@ var GoogleAdsClient = (function() {
         });
       }
 
-      Logger.log('Found ' + videoAssets.length + ' video asset-campaign links');
-
     } catch (error) {
-      Logger.log('Error fetching video assets with campaigns: ' + error.message);
+      // Silently handle
     }
 
     return videoAssets;
@@ -151,12 +143,59 @@ var GoogleAdsClient = (function() {
     };
   }
 
+  /**
+   * Get video assets for a specific campaign
+   * @param {string} campaignName - Campaign name to filter by
+   * @returns {Array} Array of video assets for this campaign
+   */
+  function getVideoAssetsForCampaign(campaignName) {
+    var videoAssets = [];
+
+    // Query campaign_asset for specific campaign
+    var query =
+      "SELECT " +
+        "asset.id, " +
+        "asset.name, " +
+        "asset.youtube_video_asset.youtube_video_id, " +
+        "asset.youtube_video_asset.youtube_video_title, " +
+        "campaign.id, " +
+        "campaign.name, " +
+        "campaign.status " +
+      "FROM campaign_asset " +
+      "WHERE asset.type = 'YOUTUBE_VIDEO' " +
+      "AND campaign.name = '" + campaignName.replace(/'/g, "\\'") + "'";
+
+    try {
+      var result = AdsApp.search(query);
+
+      while (result.hasNext()) {
+        var row = result.next();
+
+        videoAssets.push({
+          assetId: row.asset.id,
+          assetName: row.asset.name || '',
+          videoId: row.asset.youtubeVideoAsset.youtubeVideoId,
+          videoTitle: row.asset.youtubeVideoAsset.youtubeVideoTitle || '',
+          campaignId: row.campaign.id,
+          campaignName: row.campaign.name,
+          campaignStatus: row.campaign.status
+        });
+      }
+
+    } catch (error) {
+      Logger.log('Error querying campaign assets: ' + error.message);
+    }
+
+    return videoAssets;
+  }
+
   // Public API
   return {
     getVideoAssets: getVideoAssets,
     getVideoAssetsWithCampaigns: getVideoAssetsWithCampaigns,
     getVideoIdMap: getVideoIdMap,
-    checkVideosInAds: checkVideosInAds
+    checkVideosInAds: checkVideosInAds,
+    getVideoAssetsForCampaign: getVideoAssetsForCampaign
   };
 
 })();
@@ -293,6 +332,65 @@ function testSyncAdsAssetsToSheet() {
   var assets = GoogleAdsClient.getVideoAssetsWithCampaigns();
   writeAdsAssetsToSheet(assets);
   Logger.log('Done! Check "Google Ads Assets" sheet.');
+}
+
+
+/**
+ * Test: Log video assets for a specific campaign
+ * Logs Asset ID, YouTube ID, and Asset Name
+ */
+function testLogCampaignVideos() {
+  var campaignName = 'PERFORMANCE|EU|DE|GERMAN|GOOGLE-APP-INSTALL|INSTALLS|IOS|ALWAYS-ON';
+
+  Logger.log('');
+  Logger.log('=== Video Assets for Campaign ===');
+  Logger.log('Campaign: ' + campaignName);
+  Logger.log('');
+
+  var assets = GoogleAdsClient.getVideoAssetsForCampaign(campaignName);
+
+  if (assets.length === 0) {
+    Logger.log('No video assets found for this campaign.');
+    Logger.log('');
+    Logger.log('Possible reasons:');
+    Logger.log('  - Campaign name might be slightly different');
+    Logger.log('  - Videos might be at ad group level instead of campaign level');
+    Logger.log('');
+    Logger.log('Trying to find similar campaigns...');
+
+    // Search for campaigns with similar name
+    try {
+      var query = "SELECT campaign.name FROM campaign WHERE campaign.name LIKE '%PERFORMANCE%' AND campaign.name LIKE '%DE%'";
+      var result = AdsApp.search(query);
+      var similar = [];
+      while (result.hasNext()) {
+        similar.push(result.next().campaign.name);
+      }
+      if (similar.length > 0) {
+        Logger.log('Found ' + similar.length + ' similar campaigns:');
+        for (var i = 0; i < Math.min(similar.length, 5); i++) {
+          Logger.log('  - ' + similar[i]);
+        }
+      }
+    } catch (e) {
+      Logger.log('Error searching campaigns: ' + e.message);
+    }
+
+    return;
+  }
+
+  Logger.log('Found ' + assets.length + ' video assets:');
+  Logger.log('');
+  Logger.log('Asset ID | YouTube ID | Asset Name');
+  Logger.log('---------|------------|------------');
+
+  for (var i = 0; i < assets.length; i++) {
+    var a = assets[i];
+    Logger.log(a.assetId + ' | ' + a.videoId + ' | ' + (a.assetName || a.videoTitle || '(no name)'));
+  }
+
+  Logger.log('');
+  Logger.log('Total: ' + assets.length + ' videos');
 }
 
 
