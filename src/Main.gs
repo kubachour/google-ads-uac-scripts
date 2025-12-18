@@ -1490,32 +1490,157 @@ function testMutateHeadline(customerId, adInfo) {
     Logger.log('  ' + (i + 1) + '. ' + adInfo.headlines[i].asset);
   }
 
-  // Build headlines array - keep all existing + we could add a new text headline
-  // For app ads, headlines use asset references, not direct text
-  // We'll just log what would be needed
-
   Logger.log('');
   Logger.log('NOTE: App Ad headlines use asset references (not direct text).');
-  Logger.log('To add a new headline, you would need to:');
-  Logger.log('  1. First create a TEXT asset with the headline text');
-  Logger.log('  2. Then reference that asset in the app_ad.headlines array');
+  Logger.log('To add a new headline, use testCreateAndAddHeadline() function.');
+}
+
+
+/**
+ * Get existing TEXT assets in the account
+ */
+function getExistingTextAssets() {
+  Logger.log('=== Existing TEXT Assets ===');
   Logger.log('');
 
-  // Example mutation structure (logging only, not executing)
-  Logger.log('Example mutation structure for headlines:');
-  Logger.log(JSON.stringify({
-    adOperation: {
-      update: {
-        resourceName: 'customers/' + customerId + '/ads/' + adInfo.adId,
-        appAd: {
-          headlines: adInfo.headlines.concat([{
-            asset: 'customers/' + customerId + '/assets/NEW_ASSET_ID'
-          }])
-        }
-      },
-      updateMask: 'app_ad.headlines'
+  try {
+    var query =
+      "SELECT " +
+      "asset.id, " +
+      "asset.name, " +
+      "asset.text_asset.text, " +
+      "asset.resource_name " +
+      "FROM asset " +
+      "WHERE asset.type = 'TEXT' " +
+      "LIMIT 20";
+
+    var result = AdsApp.search(query);
+    var count = 0;
+
+    while (result.hasNext()) {
+      var row = result.next();
+      count++;
+      Logger.log(count + '. [' + row.asset.id + '] "' + row.asset.textAsset.text + '"');
+      Logger.log('   Resource: ' + row.asset.resourceName);
     }
-  }, null, 2));
+
+    Logger.log('');
+    Logger.log('Total TEXT assets found: ' + count);
+
+  } catch (error) {
+    Logger.log('Error: ' + error.message);
+  }
+}
+
+
+/**
+ * Create a new TEXT asset and return its resource name
+ */
+function createTextAsset(customerId, text) {
+  Logger.log('Creating TEXT asset: "' + text + '"');
+
+  try {
+    var result = AdsApp.mutate({
+      assetOperation: {
+        create: {
+          textAsset: {
+            text: text
+          }
+        }
+      }
+    });
+
+    if (result.isSuccessful()) {
+      var resourceName = result.getResourceName();
+      Logger.log('SUCCESS: Created asset ' + resourceName);
+      return resourceName;
+    } else {
+      Logger.log('ERROR: ' + result.getErrorMessage());
+      return null;
+    }
+
+  } catch (error) {
+    Logger.log('ERROR: ' + error.message);
+    return null;
+  }
+}
+
+
+/**
+ * Create a new headline and add it to the ad
+ * This demonstrates the full flow: create asset -> add to ad
+ */
+function testCreateAndAddHeadline() {
+  var customerId = '3342315080';
+  var campaignId = '21509897472';
+  var adGroupId = '162629008222';
+  var newHeadlineText = 'Test Headline ' + Date.now();
+
+  Logger.log('');
+  Logger.log('################################################################################');
+  Logger.log('# CREATE AND ADD HEADLINE TEST');
+  Logger.log('################################################################################');
+  Logger.log('');
+
+  // Step 1: Get current ad info
+  Logger.log('=== Step 1: Get Current Ad ===');
+  var adInfo = getCurrentAdAssets(customerId, campaignId, adGroupId);
+
+  if (!adInfo) {
+    Logger.log('ERROR: Could not find ad');
+    return;
+  }
+
+  Logger.log('Ad ID: ' + adInfo.adId);
+  Logger.log('Current headlines: ' + adInfo.headlines.length);
+  Logger.log('');
+
+  // Step 2: Create new TEXT asset
+  Logger.log('=== Step 2: Create TEXT Asset ===');
+  var newAssetResourceName = createTextAsset(customerId, newHeadlineText);
+
+  if (!newAssetResourceName) {
+    Logger.log('Failed to create asset');
+    return;
+  }
+
+  Logger.log('');
+
+  // Step 3: Add new headline to ad (keeping all existing)
+  Logger.log('=== Step 3: Add Headline to Ad ===');
+
+  var newHeadlines = adInfo.headlines.concat([{
+    asset: newAssetResourceName
+  }]);
+
+  Logger.log('New headlines array will have ' + newHeadlines.length + ' items');
+  Logger.log('');
+
+  try {
+    var mutationResult = AdsApp.mutate({
+      adOperation: {
+        update: {
+          resourceName: 'customers/' + customerId + '/ads/' + adInfo.adId,
+          appAd: {
+            headlines: newHeadlines
+          }
+        },
+        updateMask: 'app_ad.headlines'
+      }
+    });
+
+    Logger.log('Mutation Success: ' + mutationResult.isSuccessful());
+    if (mutationResult.isSuccessful()) {
+      Logger.log('Resource: ' + mutationResult.getResourceName());
+      Logger.log('');
+      Logger.log('SUCCESS: Added headline "' + newHeadlineText + '" to ad!');
+    } else {
+      Logger.log('Error: ' + mutationResult.getErrorMessage());
+    }
+
+  } catch (error) {
+    Logger.log('Error: ' + error.message);
+  }
 }
 
 
