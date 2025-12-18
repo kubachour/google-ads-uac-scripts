@@ -60,19 +60,7 @@ function syncSourceAssets() {
     // Write to output spreadsheet
     writeVideosToSheet(allResults);
 
-    // Summary logging
-    Logger.log('');
-    Logger.log('--- YouTube Playlists ---');
-    Logger.log('Playlists synced: ' + successfulPlaylists + ' success, ' + failedPlaylists + ' failed');
-    for (var j = 0; j < allResults.length; j++) {
-      var r = allResults[j];
-      if (r.success) {
-        Logger.log('  ' + r.language.toUpperCase() + ': ' + r.totalVideos + ' videos');
-      } else {
-        Logger.log('  ' + r.language.toUpperCase() + ': FAILED - ' + r.error);
-      }
-    }
-
+    // Google Ads logging only
     Logger.log('');
     Logger.log('--- Google Ads Campaigns ---');
     Logger.log('Total campaigns: ' + campaignStats.total);
@@ -83,9 +71,6 @@ function syncSourceAssets() {
     logGoogleAdsDebug();
 
     Logger.log('');
-    Logger.log('--- Summary ---');
-    Logger.log('Total videos from YouTube: ' + summary.totalVideos);
-    Logger.log('Processing errors: ' + summary.errors);
     Logger.log('=== Sync Complete ===');
 
     return {
@@ -710,280 +695,685 @@ function testParseFilename() {
 // ============================================================================
 
 /**
- * Log Google Ads debug info during main sync
- * Shows counts from different asset tables to identify where videos live
+ * Log assets for a specific campaign using multiple methods
+ * Target: PERFORMANCE|EU|FR|FRENCH|GOOGLE-APP-INSTALL|SIGN-UP|IOS|ALWAYS-ON
  */
 function logGoogleAdsDebug() {
+  var targetCampaign = 'PERFORMANCE|EU|FR|FRENCH|GOOGLE-APP-INSTALL|SIGN-UP|IOS|ALWAYS-ON';
+
   Logger.log('');
-  Logger.log('--- Google Ads Debug ---');
+  Logger.log('################################################################################');
+  Logger.log('# CAMPAIGN ASSET ANALYSIS');
+  Logger.log('# Target: ' + targetCampaign);
+  Logger.log('################################################################################');
 
-  // Test 1: Basic video assets
-  try {
-    var q1 = "SELECT asset.id FROM asset WHERE asset.type = 'YOUTUBE_VIDEO'";
-    var r1 = AdsApp.search(q1);
-    var c1 = 0;
-    while (r1.hasNext()) { r1.next(); c1++; }
-    Logger.log('Video assets in account: ' + c1);
-  } catch (e) {
-    Logger.log('Video assets query error: ' + e.message);
-  }
+  // Method 1: Get all assets from App Ad (ad_group_ad.app_ad)
+  logMethod1_AppAdAssets(targetCampaign);
 
-  // Test 2: Campaign-level assets
-  try {
-    var q2 = "SELECT asset.id FROM campaign_asset WHERE asset.type = 'YOUTUBE_VIDEO'";
-    var r2 = AdsApp.search(q2);
-    var c2 = 0;
-    while (r2.hasNext()) { r2.next(); c2++; }
-    Logger.log('Videos at campaign level: ' + c2);
-  } catch (e) {
-    Logger.log('Campaign assets query error: ' + e.message);
-  }
+  // Method 2: Get video assets with details
+  logMethod2_VideoAssetDetails(targetCampaign);
 
-  // Test 3: Ad group-level assets
-  try {
-    var q3 = "SELECT asset.id FROM ad_group_asset WHERE asset.type = 'YOUTUBE_VIDEO'";
-    var r3 = AdsApp.search(q3);
-    var c3 = 0;
-    while (r3.hasNext()) { r3.next(); c3++; }
-    Logger.log('Videos at ad group level: ' + c3);
-  } catch (e) {
-    Logger.log('Ad group assets query error: ' + e.message);
-  }
+  // Method 3: Get image assets with details
+  logMethod3_ImageAssetDetails(targetCampaign);
 
-  // Test 4: Asset group assets (Performance Max)
-  try {
-    var q4 = "SELECT asset.id FROM asset_group_asset WHERE asset.type = 'YOUTUBE_VIDEO'";
-    var r4 = AdsApp.search(q4);
-    var c4 = 0;
-    while (r4.hasNext()) { r4.next(); c4++; }
-    Logger.log('Videos in asset groups (PMax): ' + c4);
-  } catch (e) {
-    Logger.log('Asset group query error: ' + e.message);
-  }
+  // Method 4: Get text assets (headlines/descriptions)
+  logMethod4_TextAssetDetails(targetCampaign);
 
-  // Test 5: All campaigns
-  try {
-    var q5 = "SELECT campaign.id FROM campaign";
-    var r5 = AdsApp.search(q5);
-    var c5 = 0;
-    while (r5.hasNext()) { r5.next(); c5++; }
-    Logger.log('Total campaigns in account: ' + c5);
-  } catch (e) {
-    Logger.log('Campaigns query error: ' + e.message);
-  }
+  // Method 5: Asset performance metrics
+  logMethod5_AssetPerformance(targetCampaign);
 
-  // Test 6: App campaigns with "performance" in name
-  try {
-    var q6 = "SELECT campaign.id, campaign.name, campaign.advertising_channel_type " +
-             "FROM campaign " +
-             "WHERE campaign.advertising_channel_type IN ('MULTI_CHANNEL', 'DISPLAY') " +
-             "AND campaign.name LIKE '%performance%'";
-    var r6 = AdsApp.search(q6);
-    var c6 = 0;
-    var appCampaignNames = [];
-    while (r6.hasNext()) {
-      var row = r6.next();
-      c6++;
-      if (c6 <= 3) appCampaignNames.push(row.campaign.name + ' (' + row.campaign.advertisingChannelType + ')');
-    }
-    Logger.log('App campaigns with "performance": ' + c6);
-    if (appCampaignNames.length > 0) {
-      Logger.log('  Sample: ' + appCampaignNames.join(', '));
-    }
-  } catch (e) {
-    Logger.log('App campaigns query error: ' + e.message);
-  }
+  // Method 6: Campaign-level asset query
+  logMethod6_CampaignAssets(targetCampaign);
 
-  // Test 7: Customer-level assets (account-wide)
-  try {
-    var q7 = "SELECT asset.id FROM customer_asset WHERE asset.type = 'YOUTUBE_VIDEO'";
-    var r7 = AdsApp.search(q7);
-    var c7 = 0;
-    while (r7.hasNext()) { r7.next(); c7++; }
-    Logger.log('Videos at customer (account) level: ' + c7);
-  } catch (e) {
-    Logger.log('Customer assets query error: ' + e.message);
-  }
+  // Method 7: Ad group-level asset query
+  logMethod7_AdGroupAssets(targetCampaign);
 
-  // Test 8: Show sample video assets with their resource names
-  try {
-    var q8 = "SELECT asset.id, asset.name, asset.youtube_video_asset.youtube_video_id " +
-             "FROM asset WHERE asset.type = 'YOUTUBE_VIDEO' LIMIT 3";
-    var r8 = AdsApp.search(q8);
-    Logger.log('Sample video assets:');
-    while (r8.hasNext()) {
-      var row = r8.next();
-      Logger.log('  ID: ' + row.asset.id + ', VideoID: ' + row.asset.youtubeVideoAsset.youtubeVideoId);
-    }
-  } catch (e) {
-    Logger.log('Sample assets query error: ' + e.message);
-  }
+  Logger.log('');
+  Logger.log('################################################################################');
+  Logger.log('# ANALYSIS COMPLETE');
+  Logger.log('################################################################################');
+}
 
-  // Test 9: App campaign ads with video assets
+
+/**
+ * Method 1: Get all assets from App Ad structure
+ */
+function logMethod1_AppAdAssets(campaignName) {
+  Logger.log('');
+  Logger.log('================================================================================');
+  Logger.log('METHOD 1: App Ad Assets (ad_group_ad.app_ad)');
+  Logger.log('QUERY: ad_group_ad table - extracts all asset references from app_ad');
+  Logger.log('================================================================================');
+
   try {
-    var q9 = "SELECT " +
-             "campaign.id, campaign.name, " +
-             "ad_group.id, " +
-             "ad_group_ad.ad.id, " +
-             "ad_group_ad.ad.type, " +
-             "ad_group_ad.ad.app_ad.youtube_videos " +
-             "FROM ad_group_ad " +
-             "WHERE campaign.advertising_channel_type = 'MULTI_CHANNEL' " +
-             "AND campaign.name LIKE '%performance%' " +
-             "LIMIT 5";
-    var r9 = AdsApp.search(q9);
-    var c9 = 0;
-    Logger.log('App campaign ads with videos:');
-    while (r9.hasNext()) {
-      var row = r9.next();
-      c9++;
-      var videos = row.adGroupAd.ad.appAd.youtubeVideos || [];
-      Logger.log('  Campaign: ' + row.campaign.name);
-      Logger.log('  Ad type: ' + row.adGroupAd.ad.type);
-      Logger.log('  Videos in ad: ' + videos.length);
-      if (videos.length > 0) {
-        for (var v = 0; v < Math.min(videos.length, 2); v++) {
-          Logger.log('    - Asset: ' + videos[v].asset);
+    var query =
+      "SELECT " +
+      "campaign.name, " +
+      "ad_group.id, " +
+      "ad_group.name, " +
+      "ad_group_ad.ad.id, " +
+      "ad_group_ad.ad.app_ad.headlines, " +
+      "ad_group_ad.ad.app_ad.descriptions, " +
+      "ad_group_ad.ad.app_ad.images, " +
+      "ad_group_ad.ad.app_ad.youtube_videos, " +
+      "ad_group_ad.ad.app_ad.html5_media_bundles " +
+      "FROM ad_group_ad " +
+      "WHERE campaign.name = '" + campaignName.replace(/'/g, "\\'") + "'";
+
+    var result = AdsApp.search(query);
+    var totalHeadlines = 0;
+    var totalDescriptions = 0;
+    var totalImages = 0;
+    var totalVideos = 0;
+    var totalHtml5 = 0;
+    var adCount = 0;
+
+    var allVideoAssets = [];
+    var allImageAssets = [];
+    var allHeadlineAssets = [];
+    var allDescriptionAssets = [];
+
+    while (result.hasNext()) {
+      var row = result.next();
+      var appAd = row.adGroupAd.ad.appAd || {};
+      adCount++;
+
+      var headlines = appAd.headlines || [];
+      var descriptions = appAd.descriptions || [];
+      var images = appAd.images || [];
+      var videos = appAd.youtubeVideos || [];
+      var html5 = appAd.html5MediaBundles || [];
+
+      totalHeadlines += headlines.length;
+      totalDescriptions += descriptions.length;
+      totalImages += images.length;
+      totalVideos += videos.length;
+      totalHtml5 += html5.length;
+
+      // Collect unique assets
+      for (var i = 0; i < videos.length; i++) {
+        if (allVideoAssets.indexOf(videos[i].asset) === -1) {
+          allVideoAssets.push(videos[i].asset);
+        }
+      }
+      for (var j = 0; j < images.length; j++) {
+        if (allImageAssets.indexOf(images[j].asset) === -1) {
+          allImageAssets.push(images[j].asset);
+        }
+      }
+      for (var k = 0; k < headlines.length; k++) {
+        if (allHeadlineAssets.indexOf(headlines[k].asset) === -1) {
+          allHeadlineAssets.push(headlines[k].asset);
+        }
+      }
+      for (var l = 0; l < descriptions.length; l++) {
+        if (allDescriptionAssets.indexOf(descriptions[l].asset) === -1) {
+          allDescriptionAssets.push(descriptions[l].asset);
         }
       }
     }
-    Logger.log('Total app ads checked: ' + c9);
-  } catch (e) {
-    Logger.log('App ads query error: ' + e.message);
+
+    Logger.log('');
+    Logger.log('RESULT: SUCCESS');
+    Logger.log('');
+    Logger.log('Ads found: ' + adCount);
+    Logger.log('');
+    Logger.log('ASSET COUNTS (total across all ads):');
+    Logger.log('  Headlines: ' + totalHeadlines);
+    Logger.log('  Descriptions: ' + totalDescriptions);
+    Logger.log('  Images: ' + totalImages);
+    Logger.log('  Videos: ' + totalVideos);
+    Logger.log('  HTML5 Bundles: ' + totalHtml5);
+    Logger.log('');
+    Logger.log('UNIQUE ASSETS:');
+    Logger.log('  Unique Videos: ' + allVideoAssets.length);
+    Logger.log('  Unique Images: ' + allImageAssets.length);
+    Logger.log('  Unique Headlines: ' + allHeadlineAssets.length);
+    Logger.log('  Unique Descriptions: ' + allDescriptionAssets.length);
+    Logger.log('');
+    Logger.log('VIDEO ASSET RESOURCE NAMES:');
+    for (var v = 0; v < allVideoAssets.length; v++) {
+      Logger.log('  ' + (v + 1) + '. ' + allVideoAssets[v]);
+    }
+    Logger.log('');
+    Logger.log('IMAGE ASSET RESOURCE NAMES:');
+    for (var m = 0; m < allImageAssets.length; m++) {
+      Logger.log('  ' + (m + 1) + '. ' + allImageAssets[m]);
+    }
+
+  } catch (error) {
+    Logger.log('RESULT: ERROR');
+    Logger.log('Error: ' + error.message);
   }
 }
 
 
 /**
- * Debug: Test Google Ads campaign query directly
- * Use this to troubleshoot why campaigns might not be showing
+ * Method 2: Get video asset details with performance metrics
  */
-function debugGoogleAdsQuery() {
-  Logger.log('=== Google Ads Debug ===');
+function logMethod2_VideoAssetDetails(campaignName) {
   Logger.log('');
+  Logger.log('================================================================================');
+  Logger.log('METHOD 2: Video Asset Details + Performance');
+  Logger.log('QUERY: ad_group_ad_asset_view for videos with metrics');
+  Logger.log('================================================================================');
 
-  // Test 1: Basic video assets query
-  Logger.log('--- Test 1: Basic Video Assets ---');
   try {
-    var query1 =
+    // Query video assets with performance from ad_group_ad_asset_view
+    var query =
       "SELECT " +
-        "asset.id, " +
-        "asset.name, " +
-        "asset.type, " +
-        "asset.youtube_video_asset.youtube_video_id, " +
-        "asset.youtube_video_asset.youtube_video_title " +
-      "FROM asset " +
-      "WHERE asset.type = 'YOUTUBE_VIDEO' " +
-      "LIMIT 10";
+      "campaign.name, " +
+      "asset.id, " +
+      "asset.name, " +
+      "asset.youtube_video_asset.youtube_video_id, " +
+      "asset.youtube_video_asset.youtube_video_title, " +
+      "ad_group_ad_asset_view.performance_label, " +
+      "metrics.impressions, " +
+      "metrics.clicks, " +
+      "metrics.conversions, " +
+      "metrics.all_conversions, " +
+      "metrics.video_views, " +
+      "metrics.cost_micros " +
+      "FROM ad_group_ad_asset_view " +
+      "WHERE campaign.name = '" + campaignName.replace(/'/g, "\\'") + "' " +
+      "AND asset.type = 'YOUTUBE_VIDEO'";
 
-    var result1 = AdsApp.search(query1);
-    var count1 = 0;
+    var result = AdsApp.search(query);
 
-    while (result1.hasNext()) {
-      var row = result1.next();
-      count1++;
-      Logger.log(count1 + '. Asset ID: ' + row.asset.id);
-      Logger.log('   Video ID: ' + row.asset.youtubeVideoAsset.youtubeVideoId);
-      Logger.log('   Title: ' + (row.asset.youtubeVideoAsset.youtubeVideoTitle || 'N/A'));
+    // Aggregate by asset ID (same asset may appear multiple times)
+    var videoMap = {};
+
+    while (result.hasNext()) {
+      var row = result.next();
+      var assetId = row.asset.id;
+
+      if (!videoMap[assetId]) {
+        videoMap[assetId] = {
+          id: assetId,
+          name: row.asset.name || '',
+          videoId: row.asset.youtubeVideoAsset.youtubeVideoId,
+          videoTitle: row.asset.youtubeVideoAsset.youtubeVideoTitle || '',
+          performanceLabel: row.adGroupAdAssetView.performanceLabel,
+          impressions: 0,
+          clicks: 0,
+          conversions: 0,
+          allConversions: 0,
+          videoViews: 0,
+          cost: 0
+        };
+      }
+
+      // Aggregate metrics
+      videoMap[assetId].impressions += row.metrics.impressions || 0;
+      videoMap[assetId].clicks += row.metrics.clicks || 0;
+      videoMap[assetId].conversions += row.metrics.conversions || 0;
+      videoMap[assetId].allConversions += row.metrics.allConversions || 0;
+      videoMap[assetId].videoViews += row.metrics.videoViews || 0;
+      videoMap[assetId].cost += row.metrics.costMicros || 0;
+    }
+
+    var videos = Object.keys(videoMap).map(function(k) { return videoMap[k]; });
+
+    Logger.log('');
+    Logger.log('Found ' + videos.length + ' unique video assets');
+    Logger.log('');
+    Logger.log('VIDEO ASSETS WITH PERFORMANCE:');
+    Logger.log('');
+
+    for (var i = 0; i < videos.length; i++) {
+      var v = videos[i];
+      var costFormatted = (v.cost / 1000000).toFixed(2);
+      var ctr = v.impressions > 0 ? ((v.clicks / v.impressions) * 100).toFixed(2) : '0.00';
+
+      Logger.log((i + 1) + '. [' + v.id + '] ' + (v.videoTitle || v.videoId));
+      Logger.log('   YouTube ID: ' + v.videoId);
+      Logger.log('   URL: https://youtube.com/watch?v=' + v.videoId);
+      Logger.log('   Performance Label: ' + (v.performanceLabel || 'N/A'));
+      Logger.log('   Impressions: ' + v.impressions.toLocaleString());
+      Logger.log('   Clicks: ' + v.clicks.toLocaleString() + ' (CTR: ' + ctr + '%)');
+      Logger.log('   Video Views: ' + v.videoViews.toLocaleString());
+      Logger.log('   Conversions: ' + v.conversions.toFixed(2) + ' | All Conv: ' + v.allConversions.toFixed(2));
+      Logger.log('   Cost: $' + costFormatted);
       Logger.log('');
     }
 
-    Logger.log('Total video assets found: ' + count1);
   } catch (error) {
-    Logger.log('ERROR in Test 1: ' + error.message);
+    Logger.log('RESULT: ERROR');
+    Logger.log('Error: ' + error.message);
   }
-
-  Logger.log('');
-  Logger.log('--- Test 2: Campaign Assets ---');
-  try {
-    var query2 =
-      "SELECT " +
-        "asset.id, " +
-        "asset.youtube_video_asset.youtube_video_id, " +
-        "campaign.id, " +
-        "campaign.name, " +
-        "campaign.status " +
-      "FROM campaign_asset " +
-      "WHERE asset.type = 'YOUTUBE_VIDEO' " +
-      "LIMIT 10";
-
-    var result2 = AdsApp.search(query2);
-    var count2 = 0;
-
-    while (result2.hasNext()) {
-      var row = result2.next();
-      count2++;
-      Logger.log(count2 + '. Video ID: ' + row.asset.youtubeVideoAsset.youtubeVideoId);
-      Logger.log('   Campaign: ' + row.campaign.name + ' (' + row.campaign.status + ')');
-      Logger.log('');
-    }
-
-    Logger.log('Total campaign-asset links found: ' + count2);
-  } catch (error) {
-    Logger.log('ERROR in Test 2: ' + error.message);
-  }
-
-  Logger.log('');
-  Logger.log('--- Test 3: Ad Group Assets ---');
-  try {
-    var query3 =
-      "SELECT " +
-        "asset.id, " +
-        "asset.youtube_video_asset.youtube_video_id, " +
-        "ad_group.id, " +
-        "ad_group.name, " +
-        "campaign.id, " +
-        "campaign.name " +
-      "FROM ad_group_asset " +
-      "WHERE asset.type = 'YOUTUBE_VIDEO' " +
-      "LIMIT 10";
-
-    var result3 = AdsApp.search(query3);
-    var count3 = 0;
-
-    while (result3.hasNext()) {
-      var row = result3.next();
-      count3++;
-      Logger.log(count3 + '. Video ID: ' + row.asset.youtubeVideoAsset.youtubeVideoId);
-      Logger.log('   Ad Group: ' + row.adGroup.name);
-      Logger.log('   Campaign: ' + row.campaign.name);
-      Logger.log('');
-    }
-
-    Logger.log('Total ad_group-asset links found: ' + count3);
-  } catch (error) {
-    Logger.log('ERROR in Test 3: ' + error.message);
-  }
-
-  Logger.log('');
-  Logger.log('--- Test 4: All Campaigns ---');
-  try {
-    var query4 =
-      "SELECT " +
-        "campaign.id, " +
-        "campaign.name, " +
-        "campaign.status, " +
-        "campaign.advertising_channel_type " +
-      "FROM campaign " +
-      "LIMIT 20";
-
-    var result4 = AdsApp.search(query4);
-    var count4 = 0;
-
-    while (result4.hasNext()) {
-      var row = result4.next();
-      count4++;
-      Logger.log(count4 + '. ' + row.campaign.name);
-      Logger.log('   Status: ' + row.campaign.status);
-      Logger.log('   Type: ' + row.campaign.advertisingChannelType);
-      Logger.log('');
-    }
-
-    Logger.log('Total campaigns found: ' + count4);
-  } catch (error) {
-    Logger.log('ERROR in Test 4: ' + error.message);
-  }
-
-  Logger.log('');
-  Logger.log('=== Debug Complete ===');
 }
+
+
+/**
+ * Method 3: Get image asset details with performance metrics
+ */
+function logMethod3_ImageAssetDetails(campaignName) {
+  Logger.log('');
+  Logger.log('================================================================================');
+  Logger.log('METHOD 3: Image Asset Details + Performance');
+  Logger.log('QUERY: ad_group_ad_asset_view for images with metrics');
+  Logger.log('================================================================================');
+
+  try {
+    // Query image assets with performance
+    var query =
+      "SELECT " +
+      "campaign.name, " +
+      "asset.id, " +
+      "asset.name, " +
+      "asset.image_asset.full_size.width_pixels, " +
+      "asset.image_asset.full_size.height_pixels, " +
+      "asset.image_asset.file_size, " +
+      "ad_group_ad_asset_view.performance_label, " +
+      "metrics.impressions, " +
+      "metrics.clicks, " +
+      "metrics.conversions, " +
+      "metrics.all_conversions, " +
+      "metrics.cost_micros " +
+      "FROM ad_group_ad_asset_view " +
+      "WHERE campaign.name = '" + campaignName.replace(/'/g, "\\'") + "' " +
+      "AND asset.type = 'IMAGE'";
+
+    var result = AdsApp.search(query);
+
+    // Aggregate by asset ID
+    var imageMap = {};
+
+    while (result.hasNext()) {
+      var row = result.next();
+      var assetId = row.asset.id;
+      var img = row.asset.imageAsset || {};
+      var fullSize = img.fullSize || {};
+
+      if (!imageMap[assetId]) {
+        imageMap[assetId] = {
+          id: assetId,
+          name: row.asset.name || '',
+          width: fullSize.widthPixels || 0,
+          height: fullSize.heightPixels || 0,
+          fileSize: img.fileSize || 0,
+          performanceLabel: row.adGroupAdAssetView.performanceLabel,
+          impressions: 0,
+          clicks: 0,
+          conversions: 0,
+          allConversions: 0,
+          cost: 0
+        };
+      }
+
+      imageMap[assetId].impressions += row.metrics.impressions || 0;
+      imageMap[assetId].clicks += row.metrics.clicks || 0;
+      imageMap[assetId].conversions += row.metrics.conversions || 0;
+      imageMap[assetId].allConversions += row.metrics.allConversions || 0;
+      imageMap[assetId].cost += row.metrics.costMicros || 0;
+    }
+
+    var images = Object.keys(imageMap).map(function(k) { return imageMap[k]; });
+
+    Logger.log('');
+    Logger.log('Found ' + images.length + ' unique image assets');
+    Logger.log('');
+    Logger.log('IMAGE ASSETS WITH PERFORMANCE:');
+    Logger.log('');
+
+    for (var i = 0; i < images.length; i++) {
+      var img = images[i];
+      var costFormatted = (img.cost / 1000000).toFixed(2);
+      var ctr = img.impressions > 0 ? ((img.clicks / img.impressions) * 100).toFixed(2) : '0.00';
+      var dimensions = img.width + 'x' + img.height;
+
+      Logger.log((i + 1) + '. [' + img.id + '] ' + (img.name || 'unnamed'));
+      Logger.log('   Dimensions: ' + dimensions + ' | Size: ' + (img.fileSize ? Math.round(img.fileSize/1024) + 'KB' : 'N/A'));
+      Logger.log('   Performance Label: ' + (img.performanceLabel || 'N/A'));
+      Logger.log('   Impressions: ' + img.impressions.toLocaleString());
+      Logger.log('   Clicks: ' + img.clicks.toLocaleString() + ' (CTR: ' + ctr + '%)');
+      Logger.log('   Conversions: ' + img.conversions.toFixed(2) + ' | All Conv: ' + img.allConversions.toFixed(2));
+      Logger.log('   Cost: $' + costFormatted);
+      Logger.log('');
+    }
+
+  } catch (error) {
+    Logger.log('RESULT: ERROR');
+    Logger.log('Error: ' + error.message);
+  }
+}
+
+
+/**
+ * Method 4: Get text asset details with performance metrics
+ */
+function logMethod4_TextAssetDetails(campaignName) {
+  Logger.log('');
+  Logger.log('================================================================================');
+  Logger.log('METHOD 4: Text Asset Details + Performance (Headlines & Descriptions)');
+  Logger.log('QUERY: ad_group_ad_asset_view for text assets with metrics');
+  Logger.log('================================================================================');
+
+  try {
+    // Query text assets with performance
+    var query =
+      "SELECT " +
+      "campaign.name, " +
+      "asset.id, " +
+      "asset.text_asset.text, " +
+      "ad_group_ad_asset_view.field_type, " +
+      "ad_group_ad_asset_view.performance_label, " +
+      "metrics.impressions, " +
+      "metrics.clicks, " +
+      "metrics.conversions, " +
+      "metrics.all_conversions, " +
+      "metrics.cost_micros " +
+      "FROM ad_group_ad_asset_view " +
+      "WHERE campaign.name = '" + campaignName.replace(/'/g, "\\'") + "' " +
+      "AND asset.type = 'TEXT'";
+
+    var result = AdsApp.search(query);
+
+    // Separate headlines and descriptions, aggregate by asset ID
+    var headlineMap = {};
+    var descriptionMap = {};
+
+    while (result.hasNext()) {
+      var row = result.next();
+      var assetId = row.asset.id;
+      var fieldType = row.adGroupAdAssetView.fieldType;
+      var text = row.asset.textAsset ? row.asset.textAsset.text : '';
+
+      var targetMap = (fieldType === 'HEADLINE') ? headlineMap : descriptionMap;
+
+      if (!targetMap[assetId]) {
+        targetMap[assetId] = {
+          id: assetId,
+          text: text,
+          fieldType: fieldType,
+          performanceLabel: row.adGroupAdAssetView.performanceLabel,
+          impressions: 0,
+          clicks: 0,
+          conversions: 0,
+          allConversions: 0,
+          cost: 0
+        };
+      }
+
+      targetMap[assetId].impressions += row.metrics.impressions || 0;
+      targetMap[assetId].clicks += row.metrics.clicks || 0;
+      targetMap[assetId].conversions += row.metrics.conversions || 0;
+      targetMap[assetId].allConversions += row.metrics.allConversions || 0;
+      targetMap[assetId].cost += row.metrics.costMicros || 0;
+    }
+
+    var headlines = Object.keys(headlineMap).map(function(k) { return headlineMap[k]; });
+    var descriptions = Object.keys(descriptionMap).map(function(k) { return descriptionMap[k]; });
+
+    Logger.log('');
+    Logger.log('Found ' + headlines.length + ' unique headline assets');
+    Logger.log('Found ' + descriptions.length + ' unique description assets');
+    Logger.log('');
+
+    // Log headlines with performance
+    if (headlines.length > 0) {
+      Logger.log('HEADLINES WITH PERFORMANCE:');
+      Logger.log('');
+      for (var i = 0; i < headlines.length; i++) {
+        var h = headlines[i];
+        var costFormatted = (h.cost / 1000000).toFixed(2);
+        var ctr = h.impressions > 0 ? ((h.clicks / h.impressions) * 100).toFixed(2) : '0.00';
+
+        Logger.log((i + 1) + '. [' + h.id + '] "' + h.text + '"');
+        Logger.log('   Performance: ' + (h.performanceLabel || 'N/A'));
+        Logger.log('   Impressions: ' + h.impressions.toLocaleString() + ' | Clicks: ' + h.clicks.toLocaleString() + ' (CTR: ' + ctr + '%)');
+        Logger.log('   Conversions: ' + h.conversions.toFixed(2) + ' | All Conv: ' + h.allConversions.toFixed(2) + ' | Cost: $' + costFormatted);
+        Logger.log('');
+      }
+    }
+
+    // Log descriptions with performance
+    if (descriptions.length > 0) {
+      Logger.log('DESCRIPTIONS WITH PERFORMANCE:');
+      Logger.log('');
+      for (var j = 0; j < descriptions.length; j++) {
+        var d = descriptions[j];
+        var costFormatted2 = (d.cost / 1000000).toFixed(2);
+        var ctr2 = d.impressions > 0 ? ((d.clicks / d.impressions) * 100).toFixed(2) : '0.00';
+
+        Logger.log((j + 1) + '. [' + d.id + '] "' + d.text + '"');
+        Logger.log('   Performance: ' + (d.performanceLabel || 'N/A'));
+        Logger.log('   Impressions: ' + d.impressions.toLocaleString() + ' | Clicks: ' + d.clicks.toLocaleString() + ' (CTR: ' + ctr2 + '%)');
+        Logger.log('   Conversions: ' + d.conversions.toFixed(2) + ' | All Conv: ' + d.allConversions.toFixed(2) + ' | Cost: $' + costFormatted2);
+        Logger.log('');
+      }
+    }
+
+  } catch (error) {
+    Logger.log('RESULT: ERROR');
+    Logger.log('Error: ' + error.message);
+  }
+}
+
+
+/**
+ * Method 5: Performance Summary by Asset Type
+ */
+function logMethod5_AssetPerformance(campaignName) {
+  Logger.log('');
+  Logger.log('================================================================================');
+  Logger.log('METHOD 5: Performance Summary by Asset Type');
+  Logger.log('QUERY: ad_group_ad_asset_view aggregated totals');
+  Logger.log('================================================================================');
+
+  try {
+    var query =
+      "SELECT " +
+      "campaign.name, " +
+      "asset.id, " +
+      "asset.type, " +
+      "ad_group_ad_asset_view.performance_label, " +
+      "metrics.impressions, " +
+      "metrics.clicks, " +
+      "metrics.conversions, " +
+      "metrics.all_conversions, " +
+      "metrics.cost_micros " +
+      "FROM ad_group_ad_asset_view " +
+      "WHERE campaign.name = '" + campaignName.replace(/'/g, "\\'") + "'";
+
+    var result = AdsApp.search(query);
+
+    // Aggregate by asset type
+    var summaryByType = {};
+    var performanceLabelCounts = {};
+    var uniqueAssets = {};
+
+    while (result.hasNext()) {
+      var row = result.next();
+      var assetType = row.asset.type;
+      var assetId = row.asset.id;
+      var perfLabel = row.adGroupAdAssetView.performanceLabel || 'UNKNOWN';
+
+      // Track unique assets
+      if (!uniqueAssets[assetType]) {
+        uniqueAssets[assetType] = {};
+      }
+      uniqueAssets[assetType][assetId] = true;
+
+      // Aggregate metrics by type
+      if (!summaryByType[assetType]) {
+        summaryByType[assetType] = {
+          impressions: 0,
+          clicks: 0,
+          conversions: 0,
+          allConversions: 0,
+          cost: 0
+        };
+      }
+      summaryByType[assetType].impressions += row.metrics.impressions || 0;
+      summaryByType[assetType].clicks += row.metrics.clicks || 0;
+      summaryByType[assetType].conversions += row.metrics.conversions || 0;
+      summaryByType[assetType].allConversions += row.metrics.allConversions || 0;
+      summaryByType[assetType].cost += row.metrics.costMicros || 0;
+
+      // Count performance labels
+      var key = assetType + '_' + perfLabel;
+      performanceLabelCounts[key] = (performanceLabelCounts[key] || 0) + 1;
+    }
+
+    Logger.log('');
+    Logger.log('PERFORMANCE SUMMARY BY ASSET TYPE:');
+    Logger.log('');
+
+    var grandTotal = { impressions: 0, clicks: 0, conversions: 0, allConversions: 0, cost: 0 };
+
+    for (var type in summaryByType) {
+      var s = summaryByType[type];
+      var uniqueCount = Object.keys(uniqueAssets[type]).length;
+      var costFormatted = (s.cost / 1000000).toFixed(2);
+      var ctr = s.impressions > 0 ? ((s.clicks / s.impressions) * 100).toFixed(2) : '0.00';
+      var cpa = s.conversions > 0 ? (s.cost / 1000000 / s.conversions).toFixed(2) : 'N/A';
+
+      Logger.log('--- ' + type + ' (' + uniqueCount + ' unique assets) ---');
+      Logger.log('   Impressions: ' + s.impressions.toLocaleString());
+      Logger.log('   Clicks: ' + s.clicks.toLocaleString() + ' (CTR: ' + ctr + '%)');
+      Logger.log('   Conversions: ' + s.conversions.toFixed(2) + ' | All Conv: ' + s.allConversions.toFixed(2));
+      Logger.log('   Cost: $' + costFormatted + ' | CPA: $' + cpa);
+
+      // Show performance label distribution
+      var labels = ['BEST', 'GOOD', 'LOW', 'LEARNING', 'UNKNOWN'];
+      var labelStr = [];
+      for (var l = 0; l < labels.length; l++) {
+        var lKey = type + '_' + labels[l];
+        if (performanceLabelCounts[lKey]) {
+          labelStr.push(labels[l] + ':' + performanceLabelCounts[lKey]);
+        }
+      }
+      if (labelStr.length > 0) {
+        Logger.log('   Performance Labels: ' + labelStr.join(' | '));
+      }
+      Logger.log('');
+
+      // Add to grand total
+      grandTotal.impressions += s.impressions;
+      grandTotal.clicks += s.clicks;
+      grandTotal.conversions += s.conversions;
+      grandTotal.allConversions += s.allConversions;
+      grandTotal.cost += s.cost;
+    }
+
+    // Log grand total
+    Logger.log('=== GRAND TOTAL ===');
+    var gtCost = (grandTotal.cost / 1000000).toFixed(2);
+    var gtCtr = grandTotal.impressions > 0 ? ((grandTotal.clicks / grandTotal.impressions) * 100).toFixed(2) : '0.00';
+    var gtCpa = grandTotal.conversions > 0 ? (grandTotal.cost / 1000000 / grandTotal.conversions).toFixed(2) : 'N/A';
+    Logger.log('   Impressions: ' + grandTotal.impressions.toLocaleString());
+    Logger.log('   Clicks: ' + grandTotal.clicks.toLocaleString() + ' (CTR: ' + gtCtr + '%)');
+    Logger.log('   Conversions: ' + grandTotal.conversions.toFixed(2) + ' | All Conv: ' + grandTotal.allConversions.toFixed(2));
+    Logger.log('   Cost: $' + gtCost + ' | CPA: $' + gtCpa);
+
+  } catch (error) {
+    Logger.log('RESULT: ERROR');
+    Logger.log('Error: ' + error.message);
+  }
+}
+
+
+/**
+ * Method 6: Campaign-level assets (campaign_asset table)
+ */
+function logMethod6_CampaignAssets(campaignName) {
+  Logger.log('');
+  Logger.log('================================================================================');
+  Logger.log('METHOD 6: Campaign-Level Assets (campaign_asset)');
+  Logger.log('QUERY: campaign_asset table - may be empty for app campaigns');
+  Logger.log('================================================================================');
+
+  try {
+    var query =
+      "SELECT " +
+      "campaign.name, " +
+      "asset.id, " +
+      "asset.type, " +
+      "asset.name, " +
+      "campaign_asset.field_type, " +
+      "campaign_asset.status " +
+      "FROM campaign_asset " +
+      "WHERE campaign.name = '" + campaignName.replace(/'/g, "\\'") + "'";
+
+    var result = AdsApp.search(query);
+    var count = 0;
+    var byType = {};
+
+    while (result.hasNext()) {
+      var row = result.next();
+      count++;
+      var type = row.asset.type;
+      byType[type] = (byType[type] || 0) + 1;
+      Logger.log('  [' + row.asset.id + '] Type: ' + type + ' | Field: ' + row.campaignAsset.fieldType);
+    }
+
+    Logger.log('');
+    if (count === 0) {
+      Logger.log('RESULT: No campaign-level assets found (typical for App campaigns)');
+    } else {
+      Logger.log('RESULT: Found ' + count + ' campaign-level assets');
+      for (var t in byType) {
+        Logger.log('  ' + t + ': ' + byType[t]);
+      }
+    }
+
+  } catch (error) {
+    Logger.log('RESULT: ERROR');
+    Logger.log('Error: ' + error.message);
+  }
+}
+
+
+/**
+ * Method 7: Ad group-level assets (ad_group_asset table)
+ */
+function logMethod7_AdGroupAssets(campaignName) {
+  Logger.log('');
+  Logger.log('================================================================================');
+  Logger.log('METHOD 7: Ad Group-Level Assets (ad_group_asset)');
+  Logger.log('QUERY: ad_group_asset table - may be empty for app campaigns');
+  Logger.log('================================================================================');
+
+  try {
+    var query =
+      "SELECT " +
+      "campaign.name, " +
+      "ad_group.name, " +
+      "asset.id, " +
+      "asset.type, " +
+      "asset.name, " +
+      "ad_group_asset.field_type, " +
+      "ad_group_asset.status " +
+      "FROM ad_group_asset " +
+      "WHERE campaign.name = '" + campaignName.replace(/'/g, "\\'") + "'";
+
+    var result = AdsApp.search(query);
+    var count = 0;
+    var byType = {};
+
+    while (result.hasNext()) {
+      var row = result.next();
+      count++;
+      var type = row.asset.type;
+      byType[type] = (byType[type] || 0) + 1;
+      Logger.log('  [' + row.asset.id + '] Type: ' + type + ' | AdGroup: ' + row.adGroup.name);
+    }
+
+    Logger.log('');
+    if (count === 0) {
+      Logger.log('RESULT: No ad group-level assets found (typical for App campaigns)');
+    } else {
+      Logger.log('RESULT: Found ' + count + ' ad group-level assets');
+      for (var t in byType) {
+        Logger.log('  ' + t + ': ' + byType[t]);
+      }
+    }
+
+  } catch (error) {
+    Logger.log('RESULT: ERROR');
+    Logger.log('Error: ' + error.message);
+  }
+}
+
+
