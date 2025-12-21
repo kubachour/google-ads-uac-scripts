@@ -15,8 +15,12 @@
  * Main function - required entry point for Google Ads Scripts
  */
 function main() {
-  // testImageUploadFromDrive();  // Commented - upload works but returns temp ID -1
-  findUploadedImageAssets();
+  // testImageUploadFromDrive();  // SUCCESS - 1.91:1 and 1:1 both worked
+  // findUploadedImageAssets();
+  // logAssetDetailsById(['318026123647', '318071668458']);  // Log details of newly uploaded assets
+  // testYouTubeVideoAssetCreation('2Kzreb1nvV8', true);  // SUCCESS - video asset creation + add to ad
+
+  testBatchMutation();  // Test batch mutations (headlines+descriptions, headlines+images)
 }
 
 
@@ -3703,12 +3707,15 @@ function uploadImageAssetFromDrive(fileId, assetName) {
   try {
     var file = DriveApp.getFileById(fileId);
     var blob = file.getBlob();
-    var base64Data = Utilities.base64Encode(blob.getBytes());
+    var bytes = blob.getBytes();
+    var base64Data = Utilities.base64Encode(bytes);
+    var mimeType = blob.getContentType();
 
     Logger.log('File: ' + file.getName());
-    Logger.log('MIME type: ' + blob.getContentType());
-    Logger.log('Size: ' + Math.round(blob.getBytes().length / 1024) + ' KB');
+    Logger.log('MIME type: ' + mimeType);
+    Logger.log('Size: ' + bytes.length + ' bytes (' + Math.round(bytes.length / 1024) + ' KB)');
 
+    // Create payload with minimal properties (data only)
     var payload = {
       assetOperation: {
         create: {
@@ -3721,6 +3728,8 @@ function uploadImageAssetFromDrive(fileId, assetName) {
         }
       }
     };
+
+    Logger.log('Asset name: ' + assetName);
 
     var result = AdsApp.mutate(payload);
 
@@ -3774,16 +3783,16 @@ function testImageUploadFromDrive() {
   // =========================================================================
   var TEST_IMAGES = [
     {
-      fileId: '15ppZjozotpZJ_Kl47vdassYY6-FLLgNy',  // Replace with actual Drive file ID
-      name: 'Test_4x5_Portrait',
-      expectedRatio: '4:5',
-      expectedDimensions: '576x720'
-    }, 
+      fileId: '1bFIw9HmLttoz8VHMukGBI7lQmm9NSRs9',  // 1.91:1 landscape
+      name: 'TestUpload_id-903_fm-1.91x1.png',
+      expectedRatio: '1.91:1',
+      expectedDimensions: 'landscape'
+    },
     {
-      fileId: '157jhayR9h4bD3sOMXEdYIdAFRPv7pIxd',  // Replace with actual Drive file ID
-      name: 'Test_16x9_Horizontal',
-      expectedRatio: '16:9',
-      expectedDimensions: '1280x720'
+      fileId: '13KELxEi_xmu5aml0bK6OeAaVk723zsRg',  // 1:1 square
+      name: 'TestUpload_id-904_fm-1x1.png',
+      expectedRatio: '1:1',
+      expectedDimensions: 'square'
     }
   ];
 
@@ -4030,31 +4039,31 @@ function listDriveFolderFiles(folderId) {
 // ============================================================================
 
 /**
- * Find recently uploaded image assets by searching for name patterns
- * Use this to find the actual asset IDs after upload (since upload returns -1)
+ * Find recently uploaded image assets by searching multiple criteria:
+ * - Name patterns
+ * - Exact dimensions (576x720, 1280x720)
+ * - Small file sizes (under 20KB - our test files were 6-7KB)
  */
 function findUploadedImageAssets() {
   Logger.log('');
   Logger.log('################################################################################');
-  Logger.log('# FIND UPLOADED IMAGE ASSETS');
+  Logger.log('# FIND UPLOADED IMAGE ASSETS - COMPREHENSIVE SEARCH');
   Logger.log('################################################################################');
   Logger.log('');
 
-  // Search patterns for our test uploads
-  var searchPatterns = [
-    'Test_4x5',
-    'Test_16x9',
-    'airalo'
-  ];
+  // Search criteria - updated with successful upload names
+  var searchPatterns = ['TestUpload', 'Test_4x5', 'Test_16x9', 'airalo', '66554477', '66554488'];
+  var targetDimensions = ['576x720', '1280x720'];  // Our test image dimensions
+  var maxFileSizeKB = 20;  // Our test images were 14-15 KB
 
-  Logger.log('Searching for image assets matching patterns:');
-  for (var i = 0; i < searchPatterns.length; i++) {
-    Logger.log('  - ' + searchPatterns[i]);
-  }
+  Logger.log('Search criteria:');
+  Logger.log('  Name patterns: ' + searchPatterns.join(', '));
+  Logger.log('  Target dimensions: ' + targetDimensions.join(', '));
+  Logger.log('  Max file size: ' + maxFileSizeKB + ' KB');
   Logger.log('');
 
   try {
-    // Query all IMAGE assets
+    // Query all IMAGE assets (increase limit to find more)
     var query =
       "SELECT " +
       "asset.id, " +
@@ -4067,10 +4076,12 @@ function findUploadedImageAssets() {
       "FROM asset " +
       "WHERE asset.type = 'IMAGE' " +
       "ORDER BY asset.id DESC " +
-      "LIMIT 100";
+      "LIMIT 200";
 
     var result = AdsApp.search(query);
-    var found = [];
+    var foundByName = [];
+    var foundByDimensions = [];
+    var foundBySize = [];
     var allAssets = [];
 
     while (result.hasNext()) {
@@ -4090,71 +4101,110 @@ function findUploadedImageAssets() {
 
       allAssets.push(asset);
 
-      // Check if name matches any pattern
+      var dims = asset.width + 'x' + asset.height;
+      var fileSizeKB = asset.fileSize ? asset.fileSize / 1024 : 0;
+
+      // Check name patterns
       for (var j = 0; j < searchPatterns.length; j++) {
         if (assetName.toLowerCase().indexOf(searchPatterns[j].toLowerCase()) !== -1) {
-          found.push(asset);
+          foundByName.push(asset);
           break;
         }
       }
+
+      // Check exact dimensions
+      if (targetDimensions.indexOf(dims) !== -1) {
+        foundByDimensions.push(asset);
+      }
+
+      // Check small file size (but exclude 0)
+      if (fileSizeKB > 0 && fileSizeKB < maxFileSizeKB) {
+        foundBySize.push(asset);
+      }
     }
 
-    Logger.log('Total IMAGE assets in account: ' + allAssets.length);
+    Logger.log('Total IMAGE assets scanned: ' + allAssets.length);
     Logger.log('');
 
-    // Log matching assets
-    if (found.length > 0) {
-      Logger.log('================================================================================');
-      Logger.log('MATCHING ASSETS FOUND: ' + found.length);
-      Logger.log('================================================================================');
-      Logger.log('');
-
-      for (var k = 0; k < found.length; k++) {
-        var a = found[k];
-        var dims = a.width + 'x' + a.height;
-        var ratio = getAspectRatio(a.width, a.height);
-        var sizeKB = a.fileSize ? Math.round(a.fileSize / 1024) + ' KB' : 'unknown';
-
-        Logger.log((k + 1) + '. ASSET ID: ' + a.id);
-        Logger.log('   Name: ' + a.name);
-        Logger.log('   Resource Name: ' + a.resourceName);
-        Logger.log('   Dimensions: ' + dims + ' (' + ratio + ')');
-        Logger.log('   File Size: ' + sizeKB);
-        Logger.log('');
+    // Report findings by name
+    Logger.log('================================================================================');
+    Logger.log('FOUND BY NAME PATTERN: ' + foundByName.length);
+    Logger.log('================================================================================');
+    if (foundByName.length > 0) {
+      for (var k = 0; k < foundByName.length; k++) {
+        logAssetDetails(foundByName[k], k + 1);
       }
     } else {
-      Logger.log('No matching assets found.');
-      Logger.log('');
+      Logger.log('None found.');
     }
+    Logger.log('');
 
-    // Also show most recent 10 IMAGE assets for reference
+    // Report findings by dimensions
     Logger.log('================================================================================');
-    Logger.log('MOST RECENT 10 IMAGE ASSETS (for reference):');
+    Logger.log('FOUND BY DIMENSIONS (' + targetDimensions.join(' or ') + '): ' + foundByDimensions.length);
+    Logger.log('================================================================================');
+    if (foundByDimensions.length > 0) {
+      for (var d = 0; d < foundByDimensions.length; d++) {
+        logAssetDetails(foundByDimensions[d], d + 1);
+      }
+    } else {
+      Logger.log('None found.');
+    }
+    Logger.log('');
+
+    // Report findings by small file size
+    Logger.log('================================================================================');
+    Logger.log('FOUND BY SMALL FILE SIZE (< ' + maxFileSizeKB + ' KB): ' + foundBySize.length);
+    Logger.log('================================================================================');
+    if (foundBySize.length > 0) {
+      for (var s = 0; s < foundBySize.length; s++) {
+        logAssetDetails(foundBySize[s], s + 1);
+      }
+    } else {
+      Logger.log('None found.');
+    }
+    Logger.log('');
+
+    // Show 15 most recent for reference
+    Logger.log('================================================================================');
+    Logger.log('15 MOST RECENT IMAGE ASSETS (by ID desc):');
     Logger.log('================================================================================');
     Logger.log('');
 
-    var recentCount = Math.min(10, allAssets.length);
+    var recentCount = Math.min(15, allAssets.length);
     for (var m = 0; m < recentCount; m++) {
-      var ra = allAssets[m];
-      var raDims = ra.width + 'x' + ra.height;
-      var raRatio = getAspectRatio(ra.width, ra.height);
-
-      Logger.log((m + 1) + '. [' + ra.id + '] ' + (ra.name || 'unnamed'));
-      Logger.log('   Resource: ' + ra.resourceName);
-      Logger.log('   Dimensions: ' + raDims + ' (' + raRatio + ')');
-      Logger.log('');
+      logAssetDetails(allAssets[m], m + 1);
     }
 
     Logger.log('################################################################################');
     Logger.log('# SEARCH COMPLETE');
     Logger.log('################################################################################');
 
-    return found;
+    return {
+      byName: foundByName,
+      byDimensions: foundByDimensions,
+      bySize: foundBySize
+    };
 
   } catch (e) {
     Logger.log('ERROR: ' + e.message);
-    return [];
+    return { byName: [], byDimensions: [], bySize: [] };
   }
+}
+
+
+/**
+ * Helper to log asset details consistently
+ */
+function logAssetDetails(asset, index) {
+  var dims = asset.width + 'x' + asset.height;
+  var ratio = getAspectRatio(asset.width, asset.height);
+  var sizeKB = asset.fileSize ? Math.round(asset.fileSize / 1024) + ' KB' : 'unknown';
+
+  Logger.log(index + '. [' + asset.id + '] ' + (asset.name || 'unnamed'));
+  Logger.log('   Resource: ' + asset.resourceName);
+  Logger.log('   Dimensions: ' + dims + ' (' + ratio + ') | Size: ' + sizeKB);
+  Logger.log('');
 }
 
 
@@ -4204,5 +4254,368 @@ function findImageAssetByName(namePattern) {
   } catch (e) {
     Logger.log('ERROR: ' + e.message);
   }
+}
+
+
+/**
+ * Log comprehensive details for specific asset IDs
+ * @param {Array} assetIds - Array of asset IDs to look up
+ */
+function logAssetDetailsById(assetIds) {
+  Logger.log('');
+  Logger.log('################################################################################');
+  Logger.log('# ASSET DETAILS BY ID');
+  Logger.log('################################################################################');
+  Logger.log('');
+  Logger.log('Looking up assets: ' + assetIds.join(', '));
+  Logger.log('');
+
+  try {
+    // Query all available fields for these assets
+    var query =
+      "SELECT " +
+      "asset.id, " +
+      "asset.name, " +
+      "asset.resource_name, " +
+      "asset.type, " +
+      "asset.final_urls, " +
+      "asset.image_asset.full_size.width_pixels, " +
+      "asset.image_asset.full_size.height_pixels, " +
+      "asset.image_asset.full_size.url, " +
+      "asset.image_asset.file_size, " +
+      "asset.image_asset.mime_type " +
+      "FROM asset " +
+      "WHERE asset.id IN (" + assetIds.join(',') + ")";
+
+    Logger.log('Query: ' + query);
+    Logger.log('');
+
+    var result = AdsApp.search(query);
+
+    while (result.hasNext()) {
+      var row = result.next();
+      var imgAsset = row.asset.imageAsset || {};
+      var fullSize = imgAsset.fullSize || {};
+
+      Logger.log('================================================================================');
+      Logger.log('ASSET ID: ' + row.asset.id);
+      Logger.log('================================================================================');
+      Logger.log('');
+      Logger.log('BASIC INFO:');
+      Logger.log('  Name (filename): ' + (row.asset.name || 'N/A'));
+      Logger.log('  Resource Name: ' + row.asset.resourceName);
+      Logger.log('  Type: ' + row.asset.type);
+      Logger.log('');
+      Logger.log('IMAGE PROPERTIES:');
+      Logger.log('  Width: ' + (fullSize.widthPixels || 'N/A') + ' px');
+      Logger.log('  Height: ' + (fullSize.heightPixels || 'N/A') + ' px');
+
+      if (fullSize.widthPixels && fullSize.heightPixels) {
+        var ratio = fullSize.widthPixels / fullSize.heightPixels;
+        var ratioStr = getAspectRatio(fullSize.widthPixels, fullSize.heightPixels);
+        Logger.log('  Aspect Ratio: ' + ratioStr + ' (' + ratio.toFixed(4) + ')');
+      }
+
+      Logger.log('  File Size: ' + (imgAsset.fileSize ? Math.round(imgAsset.fileSize / 1024) + ' KB (' + imgAsset.fileSize + ' bytes)' : 'N/A'));
+      Logger.log('  MIME Type: ' + (imgAsset.mimeType || 'N/A'));
+      Logger.log('  Full Size URL: ' + (fullSize.url || 'N/A'));
+      Logger.log('');
+
+      if (row.asset.finalUrls && row.asset.finalUrls.length > 0) {
+        Logger.log('FINAL URLs:');
+        for (var i = 0; i < row.asset.finalUrls.length; i++) {
+          Logger.log('  ' + (i + 1) + '. ' + row.asset.finalUrls[i]);
+        }
+        Logger.log('');
+      }
+
+      Logger.log('');
+    }
+
+    Logger.log('################################################################################');
+    Logger.log('# QUERY COMPLETE');
+    Logger.log('################################################################################');
+
+  } catch (e) {
+    Logger.log('ERROR: ' + e.message);
+    Logger.log('Stack: ' + e.stack);
+  }
+}
+
+
+// ============================================================================
+// YOUTUBE VIDEO ASSET CREATION TEST
+// ============================================================================
+
+/**
+ * Test creating a YouTube video asset from a video ID
+ * Then optionally add it to the ad
+ *
+ * @param {string} youtubeVideoId - YouTube video ID (e.g., 'dQw4w9WgXcQ')
+ * @param {boolean} addToAd - Whether to also add the asset to the ad
+ */
+function testYouTubeVideoAssetCreation(youtubeVideoId, addToAd) {
+  var customerId = '3342315080';
+  var campaignId = '21509897472';
+  var adGroupId = '162629008222';
+
+  Logger.log('');
+  Logger.log('################################################################################');
+  Logger.log('# TEST: YOUTUBE VIDEO ASSET CREATION');
+  Logger.log('################################################################################');
+  Logger.log('');
+
+  if (!youtubeVideoId) {
+    Logger.log('ERROR: Please provide a YouTube video ID');
+    Logger.log('Usage: testYouTubeVideoAssetCreation("dQw4w9WgXcQ", true)');
+    return;
+  }
+
+  Logger.log('YouTube Video ID: ' + youtubeVideoId);
+  Logger.log('Add to Ad: ' + (addToAd ? 'Yes' : 'No'));
+  Logger.log('');
+
+  // =========================================================================
+  // STEP 1: Create YouTube Video Asset
+  // =========================================================================
+  Logger.log('================================================================================');
+  Logger.log('STEP 1: CREATE YOUTUBE VIDEO ASSET');
+  Logger.log('================================================================================');
+  Logger.log('');
+
+  var assetName = 'TestVideo_' + youtubeVideoId + '_' + Date.now();
+  Logger.log('Asset Name: ' + assetName);
+
+  var assetPayload = {
+    assetOperation: {
+      create: {
+        resourceName: 'customers/' + customerId + '/assets/-1',
+        name: assetName,
+        type: 'YOUTUBE_VIDEO',
+        youtubeVideoAsset: {
+          youtubeVideoId: youtubeVideoId
+        }
+      }
+    }
+  };
+
+  Logger.log('Payload:');
+  Logger.log(JSON.stringify(assetPayload, null, 2));
+  Logger.log('');
+
+  var assetResult = executeMutationWithErrorExtraction(assetPayload);
+
+  if (!assetResult.success) {
+    Logger.log('ASSET CREATION FAILED - Cannot proceed to add to ad');
+    return;
+  }
+
+  var newAssetResourceName = assetResult.resourceName;
+  Logger.log('');
+  Logger.log('Asset created: ' + newAssetResourceName);
+
+  // Check if we got a real ID or temp ID
+  if (newAssetResourceName.indexOf('/-1') !== -1 || newAssetResourceName.indexOf('/assets/-') !== -1) {
+    Logger.log('WARNING: Got temporary ID - video may already exist as asset');
+  }
+
+  if (!addToAd) {
+    Logger.log('');
+    Logger.log('Skipping add-to-ad step (addToAd = false)');
+    Logger.log('');
+    Logger.log('################################################################################');
+    Logger.log('# TEST COMPLETE');
+    Logger.log('################################################################################');
+    return;
+  }
+
+  // =========================================================================
+  // STEP 2: Add to Ad
+  // =========================================================================
+  Logger.log('');
+  Logger.log('================================================================================');
+  Logger.log('STEP 2: ADD VIDEO ASSET TO AD');
+  Logger.log('================================================================================');
+  Logger.log('');
+
+  // Get current ad info
+  var adInfo = getCurrentAdAssets(customerId, campaignId, adGroupId);
+
+  if (!adInfo) {
+    Logger.log('ERROR: Could not find ad');
+    return;
+  }
+
+  Logger.log('Ad ID: ' + adInfo.adId);
+  Logger.log('Current Videos: ' + adInfo.videos.length);
+  Logger.log('');
+
+  // Build new videos array
+  var newVideos = [];
+  for (var i = 0; i < adInfo.videos.length; i++) {
+    newVideos.push(adInfo.videos[i]);
+  }
+  newVideos.push({ asset: newAssetResourceName });
+
+  Logger.log('New video count will be: ' + newVideos.length);
+
+  var adPayload = {
+    adOperation: {
+      update: {
+        resourceName: 'customers/' + customerId + '/ads/' + adInfo.adId,
+        appAd: {
+          youtubeVideos: newVideos
+        }
+      },
+      updateMask: 'app_ad.youtube_videos'
+    }
+  };
+
+  Logger.log('');
+  Logger.log('Ad Mutation Payload:');
+  Logger.log(JSON.stringify(adPayload, null, 2));
+  Logger.log('');
+
+  var adResult = executeMutationWithErrorExtraction(adPayload);
+
+  Logger.log('');
+  Logger.log('================================================================================');
+  Logger.log('TEST SUMMARY');
+  Logger.log('================================================================================');
+  Logger.log('');
+  Logger.log('Asset Creation: ' + (assetResult.success ? 'SUCCESS' : 'FAILED'));
+  Logger.log('Asset Resource: ' + newAssetResourceName);
+  Logger.log('Add to Ad: ' + (adResult.success ? 'SUCCESS' : 'FAILED'));
+  Logger.log('');
+  Logger.log('################################################################################');
+  Logger.log('# TEST COMPLETE');
+  Logger.log('################################################################################');
+}
+
+
+// ============================================================================
+// BATCH MUTATION TEST
+// ============================================================================
+
+/**
+ * Test updating multiple asset types in a single mutation call
+ *
+ * Tests:
+ * 1. Headlines + Descriptions (both text)
+ * 2. Headlines + Images (text + media)
+ */
+function testBatchMutation() {
+  var customerId = '3342315080';
+  var campaignId = '21509897472';
+  var adGroupId = '162629008222';
+
+  Logger.log('');
+  Logger.log('################################################################################');
+  Logger.log('# TEST: BATCH MUTATIONS');
+  Logger.log('################################################################################');
+  Logger.log('');
+
+  // Get current ad info
+  var adInfo = getCurrentAdAssets(customerId, campaignId, adGroupId);
+
+  if (!adInfo) {
+    Logger.log('ERROR: Could not find ad');
+    return;
+  }
+
+  Logger.log('Ad ID: ' + adInfo.adId);
+  Logger.log('Current Headlines: ' + (adInfo.headlines ? adInfo.headlines.length : 'N/A'));
+  Logger.log('Current Descriptions: ' + (adInfo.descriptions ? adInfo.descriptions.length : 'N/A'));
+  Logger.log('Current Images: ' + adInfo.images.length);
+  Logger.log('');
+
+  // =========================================================================
+  // TEST 1: Headlines + Descriptions (both text assets)
+  // =========================================================================
+  Logger.log('================================================================================');
+  Logger.log('TEST 1: BATCH UPDATE - Headlines + Descriptions');
+  Logger.log('================================================================================');
+  Logger.log('');
+
+  var batchPayload1 = {
+    adOperation: {
+      update: {
+        resourceName: 'customers/' + customerId + '/ads/' + adInfo.adId,
+        appAd: {
+          headlines: [
+            { text: 'Batch Test Headline 1' },
+            { text: 'Batch Test Headline 2' },
+            { text: 'Batch Test Headline 3' }
+          ],
+          descriptions: [
+            { text: 'Batch test description number one for testing' },
+            { text: 'Batch test description number two for testing' }
+          ]
+        }
+      },
+      updateMask: 'app_ad.headlines,app_ad.descriptions'
+    }
+  };
+
+  Logger.log('Payload:');
+  Logger.log(JSON.stringify(batchPayload1, null, 2));
+  Logger.log('');
+
+  var result1 = executeMutationWithErrorExtraction(batchPayload1);
+
+  Logger.log('');
+  Logger.log('Result: ' + (result1.success ? 'SUCCESS' : 'FAILED'));
+  Logger.log('');
+
+  // =========================================================================
+  // TEST 2: Headlines + Images (text + media)
+  // =========================================================================
+  Logger.log('================================================================================');
+  Logger.log('TEST 2: BATCH UPDATE - Headlines + Images');
+  Logger.log('================================================================================');
+  Logger.log('');
+
+  // Refresh ad info
+  adInfo = getCurrentAdAssets(customerId, campaignId, adGroupId);
+
+  var batchPayload2 = {
+    adOperation: {
+      update: {
+        resourceName: 'customers/' + customerId + '/ads/' + adInfo.adId,
+        appAd: {
+          headlines: [
+            { text: 'Mixed Batch Headline A' },
+            { text: 'Mixed Batch Headline B' }
+          ],
+          images: adInfo.images  // Keep existing images
+        }
+      },
+      updateMask: 'app_ad.headlines,app_ad.images'
+    }
+  };
+
+  Logger.log('Payload:');
+  Logger.log(JSON.stringify(batchPayload2, null, 2));
+  Logger.log('');
+
+  var result2 = executeMutationWithErrorExtraction(batchPayload2);
+
+  Logger.log('');
+  Logger.log('Result: ' + (result2.success ? 'SUCCESS' : 'FAILED'));
+  Logger.log('');
+
+  // =========================================================================
+  // SUMMARY
+  // =========================================================================
+  Logger.log('================================================================================');
+  Logger.log('TEST SUMMARY');
+  Logger.log('================================================================================');
+  Logger.log('');
+  Logger.log('TEST 1 (Headlines + Descriptions): ' + (result1.success ? 'SUCCESS' : 'FAILED'));
+  Logger.log('TEST 2 (Headlines + Images): ' + (result2.success ? 'SUCCESS' : 'FAILED'));
+  Logger.log('');
+  Logger.log('################################################################################');
+  Logger.log('# TEST COMPLETE');
+  Logger.log('################################################################################');
 }
 

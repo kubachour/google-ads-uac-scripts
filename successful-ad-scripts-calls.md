@@ -47,7 +47,161 @@ RESULT: SUCCESS
 Asset Resource Name: customers/3342315080/assets/-1
 ```
 
-**Note:** The returned resource name contains `-1` (temporary ID). To use the asset, you must query for the actual asset ID by name.
+**Note:** If the returned resource name contains `-1` (temporary ID), it may be because:
+1. **Preview mode**: Running as "Preview" instead of "Run" doesn't execute mutations, so no real ID is assigned
+2. **Deduplication**: Google may deduplicate identical image content with an existing asset
+
+Always use "Run" (not "Preview") to get real asset IDs.
+
+---
+
+### IMAGE: Upload from Drive + Add to Ad - FULL SUCCESS
+
+**Tested:** 2025-12-19
+**Result:** Asset created with real ID and successfully added to App Campaign ad
+
+```javascript
+// Step 1: Upload image from Google Drive
+function uploadImageAssetFromDrive(fileId, assetName) {
+  var customerId = AdsApp.currentAccount().getCustomerId().replace(/-/g, '');
+
+  var file = DriveApp.getFileById(fileId);
+  var blob = file.getBlob();
+  var base64Data = Utilities.base64Encode(blob.getBytes());
+
+  var payload = {
+    assetOperation: {
+      create: {
+        resourceName: 'customers/' + customerId + '/assets/-1',
+        name: assetName,
+        type: 'IMAGE',
+        imageAsset: {
+          data: base64Data
+        }
+      }
+    }
+  };
+
+  var result = AdsApp.mutate(payload);
+  return result.getResourceName();  // Returns real ID if unique content!
+}
+
+// Step 2: Add to App Campaign Ad
+function addImageToAd(customerId, adId, currentImages, newAssetResourceName) {
+  var newImages = currentImages.slice();  // Copy existing
+  newImages.push({ asset: newAssetResourceName });
+
+  var payload = {
+    adOperation: {
+      update: {
+        resourceName: 'customers/' + customerId + '/ads/' + adId,
+        appAd: {
+          images: newImages
+        }
+      },
+      updateMask: 'app_ad.images'
+    }
+  };
+
+  return AdsApp.mutate(payload);
+}
+```
+
+**Log Output (SUCCESS):**
+```
+File: airalo-test-4-5-id-66554477.png
+MIME type: image/png
+Size: 14425 bytes (14 KB)
+Asset name: TestUpload_id-901_fm-unknown.png_1766148002307
+RESULT: SUCCESS
+Asset Resource Name: customers/3342315080/assets/318024427603
+
+--- Adding to Ad ---
+SUCCESS
+Resource: customers/3342315080/ads/707391445617
+ADD TO AD: SUCCESS
+```
+
+**Key insight:** To get a real asset ID (not `-1`), the image content must be UNIQUE. If identical content exists, Google deduplicates and returns `-1`.
+
+---
+
+### YOUTUBE VIDEO: Create Asset from Video ID - SUCCESS
+
+**Tested:** 2025-12-19
+**Result:** Asset created with real ID and successfully added to App Campaign ad
+
+```javascript
+// Step 1: Create YouTube Video Asset
+var customerId = '3342315080';
+var youtubeVideoId = '2Kzreb1nvV8';
+var assetName = 'TestVideo_' + youtubeVideoId + '_' + Date.now();
+
+var assetPayload = {
+  assetOperation: {
+    create: {
+      resourceName: 'customers/' + customerId + '/assets/-1',
+      name: assetName,
+      type: 'YOUTUBE_VIDEO',
+      youtubeVideoAsset: {
+        youtubeVideoId: youtubeVideoId
+      }
+    }
+  }
+};
+
+var result = AdsApp.mutate(assetPayload);
+// result.isSuccessful() = true
+// result.getResourceName() = 'customers/3342315080/assets/317946076202'
+```
+
+**Log Output:**
+```
+Asset Name: TestVideo_2Kzreb1nvV8_1766152235270
+RESULT: SUCCESS
+Asset Resource Name: customers/3342315080/assets/317946076202
+```
+
+**Key insight:** Unlike image uploads, YouTube video assets return a real asset ID immediately (not `-1`). The video must be public or unlisted on YouTube.
+
+---
+
+### YOUTUBE VIDEO: Create Asset + Add to Ad - FULL SUCCESS
+
+**Tested:** 2025-12-19
+**Result:** Created new YouTube video asset and added to ad in sequence
+
+```javascript
+// Step 1: Create the asset (see above)
+var assetResourceName = 'customers/3342315080/assets/317946076202';
+
+// Step 2: Add to Ad (append to existing videos)
+var adPayload = {
+  adOperation: {
+    update: {
+      resourceName: 'customers/3342315080/ads/707391445617',
+      appAd: {
+        youtubeVideos: [
+          { asset: 'customers/3342315080/assets/150592116554' },  // existing
+          { asset: 'customers/3342315080/assets/11289238226' },   // existing
+          { asset: 'customers/3342315080/assets/317946076202' }   // newly created
+        ]
+      }
+    },
+    updateMask: 'app_ad.youtube_videos'
+  }
+};
+
+var result = AdsApp.mutate(adPayload);
+// result.isSuccessful() = true
+```
+
+**Log Output:**
+```
+Asset Creation: SUCCESS
+Asset Resource: customers/3342315080/assets/317946076202
+Add to Ad: SUCCESS
+```
 
 ---
 
@@ -250,3 +404,203 @@ Error Message: The aspect ratio of the image does not match the expected aspect 
 | 4:5 | 576x720 | SUCCESS (upload) |
 | 3:4 | 768x1024 | FAILED |
 | 1.5:1 | 480x320 | FAILED |
+
+---
+
+## YouTube Advanced API Calls
+
+**Prerequisites:**
+1. Enable YouTube Advanced API in Google Ads Scripts editor
+2. Click "Advanced APIs" button → Check "YouTube"
+3. Enable in linked Google Cloud Console
+
+### Get Playlist Info - SUCCESS
+
+```javascript
+// Get playlist metadata (title, video count, etc.)
+var response = YouTube.Playlists.list('snippet,contentDetails', {
+  id: 'PLxxxxxxxxxxxxxxx'  // YouTube playlist ID
+});
+
+if (response.items && response.items.length > 0) {
+  var playlist = response.items[0];
+
+  Logger.log('Title: ' + playlist.snippet.title);
+  Logger.log('Description: ' + playlist.snippet.description);
+  Logger.log('Channel: ' + playlist.snippet.channelTitle);
+  Logger.log('Video Count: ' + playlist.contentDetails.itemCount);
+  Logger.log('Thumbnail: ' + playlist.snippet.thumbnails.high.url);
+}
+```
+
+---
+
+### Get Playlist Videos (Paginated) - SUCCESS
+
+```javascript
+// Get all videos from a playlist with pagination
+var playlistItems = [];
+var pageToken = null;
+
+do {
+  var params = {
+    playlistId: 'PLxxxxxxxxxxxxxxx',
+    maxResults: 50  // Max allowed per request
+  };
+
+  if (pageToken) {
+    params.pageToken = pageToken;
+  }
+
+  var response = YouTube.PlaylistItems.list('snippet,contentDetails', params);
+
+  if (response.items && response.items.length > 0) {
+    for (var i = 0; i < response.items.length; i++) {
+      var item = response.items[i];
+      playlistItems.push({
+        videoId: item.contentDetails.videoId,
+        title: item.snippet.title,
+        description: item.snippet.description,
+        publishedAt: item.snippet.publishedAt,
+        position: item.snippet.position,
+        thumbnailUrl: item.snippet.thumbnails.high.url
+      });
+    }
+  }
+
+  pageToken = response.nextPageToken;
+
+} while (pageToken);
+
+Logger.log('Total videos: ' + playlistItems.length);
+```
+
+---
+
+### Get Video Details (Duration, Quality) - SUCCESS
+
+```javascript
+// Get video details in batches (max 50 IDs per request)
+var videoIds = ['videoId1', 'videoId2', 'videoId3'];
+
+var response = YouTube.Videos.list('contentDetails,status', {
+  id: videoIds.join(',')
+});
+
+if (response.items) {
+  for (var i = 0; i < response.items.length; i++) {
+    var video = response.items[i];
+
+    Logger.log('Video ID: ' + video.id);
+    Logger.log('Duration: ' + video.contentDetails.duration);  // ISO 8601 format: PT1H30M45S
+    Logger.log('Definition: ' + video.contentDetails.definition);  // 'hd' or 'sd'
+    Logger.log('Privacy: ' + video.status.privacyStatus);  // 'public', 'unlisted', 'private'
+  }
+}
+```
+
+---
+
+### Parse ISO 8601 Duration - UTILITY
+
+```javascript
+// Convert YouTube duration format to seconds
+function parseDuration(isoDuration) {
+  if (!isoDuration) return 0;
+
+  var match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+
+  var hours = parseInt(match[1] || 0, 10);
+  var minutes = parseInt(match[2] || 0, 10);
+  var seconds = parseInt(match[3] || 0, 10);
+
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+// Examples:
+// 'PT30S'      -> 30
+// 'PT5M30S'    -> 330
+// 'PT1H30M45S' -> 5445
+```
+
+---
+
+### Format Duration for Display - UTILITY
+
+```javascript
+function formatDuration(totalSeconds) {
+  var hours = Math.floor(totalSeconds / 3600);
+  var minutes = Math.floor((totalSeconds % 3600) / 60);
+  var seconds = totalSeconds % 60;
+
+  var pad = function(n) { return n < 10 ? '0' + n : String(n); };
+
+  if (hours > 0) {
+    return hours + ':' + pad(minutes) + ':' + pad(seconds);
+  }
+  return minutes + ':' + pad(seconds);
+}
+
+// Examples:
+// 30    -> '0:30'
+// 330   -> '5:30'
+// 5445  -> '1:30:45'
+```
+
+---
+
+### Complete YouTube Client Example
+
+```javascript
+var YouTubeClient = {
+
+  getPlaylistInfo: function(playlistId) {
+    var response = YouTube.Playlists.list('snippet,contentDetails', {
+      id: playlistId
+    });
+
+    if (!response.items || response.items.length === 0) {
+      return null;
+    }
+
+    var playlist = response.items[0];
+    return {
+      playlistId: playlistId,
+      title: playlist.snippet.title,
+      description: playlist.snippet.description || '',
+      channelTitle: playlist.snippet.channelTitle,
+      videoCount: playlist.contentDetails.itemCount
+    };
+  },
+
+  getPlaylistVideos: function(playlistId) {
+    var videos = [];
+    var pageToken = null;
+
+    do {
+      var params = { playlistId: playlistId, maxResults: 50 };
+      if (pageToken) params.pageToken = pageToken;
+
+      var response = YouTube.PlaylistItems.list('snippet,contentDetails', params);
+
+      if (response.items) {
+        for (var i = 0; i < response.items.length; i++) {
+          videos.push({
+            videoId: response.items[i].contentDetails.videoId,
+            title: response.items[i].snippet.title
+          });
+        }
+      }
+
+      pageToken = response.nextPageToken;
+    } while (pageToken);
+
+    return videos;
+  }
+};
+
+// Usage:
+var info = YouTubeClient.getPlaylistInfo('PLxxxxxxx');
+var videos = YouTubeClient.getPlaylistVideos('PLxxxxxxx');
+```
