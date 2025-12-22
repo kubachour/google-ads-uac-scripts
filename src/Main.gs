@@ -4,6 +4,14 @@
  *
  * PLATFORM: Google Ads Scripts
  * This file contains the main trigger functions and entry points
+ *
+ * DEPENDS ON:
+ *   - Config.gs (configuration)
+ *   - SheetsRepository.gs (data storage)
+ *   - DecisionEngine.gs (performance analysis)
+ *   - ChangeRequestManager.gs (change lifecycle)
+ *   - DriveSource.gs (image discovery)
+ *   - SlackClient.gs (notifications)
  */
 
 
@@ -13,14 +21,230 @@
 
 /**
  * Main function - required entry point for Google Ads Scripts
+ * Uncomment the function you want to run
  */
 function main() {
+  // === AUTOMATION ===
+  // mainAutomation();  // Full automation: check approvals -> execute OR analyze
+
+  // === TESTING ===
+  testBatchMutation();  // Test batch mutations (headlines+descriptions, headlines+images)
   // testImageUploadFromDrive();  // SUCCESS - 1.91:1 and 1:1 both worked
   // findUploadedImageAssets();
   // logAssetDetailsById(['318026123647', '318071668458']);  // Log details of newly uploaded assets
-  // testYouTubeVideoAssetCreation('2Kzreb1nvV8', true);  // SUCCESS - video asset creation + add to ad
+  // testYouTubeVideoAssetCreation('YOUR_VIDEO_ID', true);  // SUCCESS - video asset creation + add to ad
+}
 
-  testBatchMutation();  // Test batch mutations (headlines+descriptions, headlines+images)
+
+// ============================================================================
+// AUTOMATION ENTRY POINT
+// ============================================================================
+
+/**
+ * Main automation function - analyze performance and manage changes
+ *
+ * Execution flow:
+ * 1. Check for APPROVED changes in Sheet -> Execute them if found
+ * 2. If no approvals, run analysis:
+ *    - LOW performers -> AUTO-execute removal + replacement
+ *    - GOOD performers with better replacement -> Write PENDING to Sheet
+ * 3. Notify via Slack
+ *
+ * Schedule: Run every 2-4 hours via Google Ads Scripts trigger
+ */
+function mainAutomation() {
+  Logger.log('=== Asset Automation Started ===');
+  Logger.log('');
+
+  try {
+    initConfig();
+
+    // STEP 1: Check for approved changes first
+    Logger.log('Step 1: Checking for approved changes...');
+    var approved = ChangeRequestManager.getApprovedFromSheet();
+
+    if (approved.length > 0) {
+      Logger.log('Found ' + approved.length + ' approved changes - executing');
+      SlackClient.notifyStart('execution');
+
+      var results = ChangeRequestManager.executeApprovedFromSheet();
+
+      SlackClient.notifyExecutionComplete(results);
+
+      Logger.log('');
+      Logger.log('=== Execution Complete ===');
+      Logger.log('Success: ' + results.filter(function(r) { return r.success; }).length);
+      Logger.log('Failed: ' + results.filter(function(r) { return !r.success; }).length);
+      return;  // EXIT - don't analyze, just execute
+    }
+
+    Logger.log('No approved changes found');
+    Logger.log('');
+
+    // STEP 2: Run analysis
+    Logger.log('Step 2: Running performance analysis...');
+    SlackClient.notifyStart('analysis');
+
+    var changes = DecisionEngine.analyzeAllCampaigns();
+
+    if (changes.length === 0) {
+      Logger.log('No changes needed - all assets performing well');
+      SlackClient.notifyNoChanges();
+      return;
+    }
+
+    // STEP 3: Process changes (auto-execute LOW, queue GOOD)
+    Logger.log('');
+    Logger.log('Step 3: Processing ' + changes.length + ' changes...');
+
+    var processResult = ChangeRequestManager.processChanges(changes);
+
+    // STEP 4: Notify
+    var summary = {
+      autoExecuted: processResult.autoExecuted || [],
+      pending: processResult.pending || [],
+      skipped: processResult.skipped || 0
+    };
+
+    SlackClient.notifyAnalysisComplete(summary);
+
+    Logger.log('');
+    Logger.log('=== Analysis Complete ===');
+    Logger.log('Auto-executed: ' + summary.autoExecuted.length);
+    Logger.log('Pending approval: ' + summary.pending.length);
+    Logger.log('Skipped: ' + summary.skipped);
+
+  } catch (error) {
+    Logger.log('ERROR: ' + error.message);
+    SlackClient.notifyError('mainAutomation', error);
+    throw error;
+  }
+}
+
+
+/**
+ * Manual trigger: Force run analysis only (no execution)
+ */
+function runAnalysisOnly() {
+  Logger.log('=== Running Analysis Only ===');
+
+  try {
+    initConfig();
+
+    var changes = DecisionEngine.analyzeAllCampaigns();
+
+    Logger.log('');
+    Logger.log('Found ' + changes.length + ' potential changes:');
+
+    for (var i = 0; i < changes.length; i++) {
+      var c = changes[i];
+      Logger.log('');
+      Logger.log((i + 1) + '. ' + c.action + ' - ' + c.assetType);
+      Logger.log('   Current: ' + (c.currentAssetName || 'N/A'));
+      Logger.log('   New: ' + (c.newAssetName || 'N/A'));
+      Logger.log('   Approval: ' + c.approval);
+      Logger.log('   Reason: ' + c.reason);
+    }
+
+  } catch (error) {
+    Logger.log('ERROR: ' + error.message);
+    throw error;
+  }
+}
+
+
+/**
+ * Manual trigger: Execute all approved changes
+ */
+function executeApprovedChanges() {
+  Logger.log('=== Executing Approved Changes ===');
+
+  try {
+    initConfig();
+
+    var approved = ChangeRequestManager.getApprovedFromSheet();
+
+    if (approved.length === 0) {
+      Logger.log('No approved changes to execute');
+      return;
+    }
+
+    Logger.log('Found ' + approved.length + ' approved changes');
+
+    var results = ChangeRequestManager.executeApprovedFromSheet();
+
+    Logger.log('');
+    Logger.log('Results:');
+    for (var i = 0; i < results.length; i++) {
+      var r = results[i];
+      var status = r.success ? 'SUCCESS' : 'FAILED';
+      Logger.log('  ' + r.requestId + ': ' + status + (r.error ? ' - ' + r.error : ''));
+    }
+
+  } catch (error) {
+    Logger.log('ERROR: ' + error.message);
+    throw error;
+  }
+}
+
+
+/**
+ * Test the automation modules
+ */
+function testAutomationModules() {
+  Logger.log('=== Testing Automation Modules ===');
+  Logger.log('');
+
+  initConfig();
+
+  // Test 1: Config
+  Logger.log('1. Config.gs');
+  Logger.log('   Customer ID: ' + CONFIG.GOOGLE_ADS.CUSTOMER_ID);
+  Logger.log('   Campaigns: ' + CONFIG.GOOGLE_ADS.CAMPAIGNS.length);
+  Logger.log('   OK');
+  Logger.log('');
+
+  // Test 2: Decision rules
+  Logger.log('2. DecisionEngine.gs');
+  Logger.log('   Skip labels: ' + CONFIG.DECISION.SKIP_LABELS.join(', '));
+  Logger.log('   Auto-remove labels: ' + CONFIG.DECISION.AUTO_REMOVE_LABELS.join(', '));
+  Logger.log('   OK');
+  Logger.log('');
+
+  // Test 3: Sheets (if configured)
+  Logger.log('3. SheetsRepository.gs');
+  if (CONFIG.SHEETS.SPREADSHEET_ID) {
+    var testRead = SheetsRepository.getApprovedChangeRequests();
+    Logger.log('   Approved requests: ' + testRead.length);
+    Logger.log('   OK');
+  } else {
+    Logger.log('   Spreadsheet not configured - skipping');
+  }
+  Logger.log('');
+
+  // Test 4: Slack (if configured)
+  Logger.log('4. SlackClient.gs');
+  if (CONFIG.SLACK.ENABLED && CONFIG.SLACK.WEBHOOK_URL) {
+    Logger.log('   Slack enabled');
+    // Don't actually send in test
+    Logger.log('   OK (not sending test message)');
+  } else {
+    Logger.log('   Slack not configured - skipping');
+  }
+  Logger.log('');
+
+  // Test 5: Drive (if configured)
+  Logger.log('5. DriveSource.gs');
+  if (CONFIG.DRIVE.PARENT_FOLDER_ID) {
+    var folders = DriveSource.discoverAllFolders();
+    Logger.log('   Discovered folders: ' + folders.length);
+    Logger.log('   OK');
+  } else {
+    Logger.log('   Drive folder not configured - skipping');
+  }
+  Logger.log('');
+
+  Logger.log('=== All Module Tests Complete ===');
 }
 
 
@@ -669,9 +893,9 @@ function testSyncSingleLanguage() {
  */
 function testParseFilename() {
   var testCases = [
-    'Sprint32-SocialSavannah-Diego-video1_c-Diego_s-Fiverr_d-Sep25_t-Video_m-WhatIsAneSim_9x16.mp4',
-    'Diego-WhatIsAneSim-Sep25-16x9',
-    'creative_c-Casey_s-Internal_d-Oct24_t-Static_1x1.png',
+    'Sprint32-SocialSavannah-Alex-video1_c-Alex_s-Fiverr_d-Sep25_t-Video_m-DiscoverMaps_9x16.mp4',
+    'Alex-DiscoverMaps-Sep25-16x9',
+    'creative_c-Jordan_s-Internal_d-Oct24_t-Static_1x1.png',
     'Simple Video Title'
   ];
 
@@ -1389,7 +1613,7 @@ function logMethod7_AdGroupAssets(campaignName) {
  * Ad Group: 162629008222
  */
 function testMutateAppAd() {
-  var customerId = '3342315080';
+  var customerId = '1234567890';  // TODO: Replace with your Google Ads Customer ID
   var campaignId = '21509897472';
   var adGroupId = '162629008222';
 
@@ -1576,7 +1800,7 @@ function createTextAsset(customerId, text) {
  * This demonstrates the full flow: create asset -> add to ad
  */
 function testCreateAndAddHeadline() {
-  var customerId = '3342315080';
+  var customerId = '1234567890';  // TODO: Replace with your Google Ads Customer ID
   var campaignId = '21509897472';
   var adGroupId = '162629008222';
   var newHeadlineText = 'Test Headline ' + Date.now();
@@ -1748,7 +1972,7 @@ function testMutateVideo(customerId, adInfo) {
  * This keeps all existing assets and just logs what the mutation would look like
  */
 function testFullMutation() {
-  var customerId = '3342315080';
+  var customerId = '1234567890';  // TODO: Replace with your Google Ads Customer ID
   var campaignId = '21509897472';
   var adGroupId = '162629008222';
 
@@ -1811,7 +2035,7 @@ function testFullMutation() {
  * This is the main entry point for testing campaign asset mutations
  */
 function testAllAssetMutations() {
-  var customerId = '3342315080';
+  var customerId = '1234567890';  // TODO: Replace with your Google Ads Customer ID
   var campaignId = '21509897472';
   var adGroupId = '162629008222';
 
@@ -2144,7 +2368,7 @@ function getExistingImageAssets() {
  * Test headline mutation with proper error extraction
  */
 function testHeadlineMutation() {
-  var customerId = '3342315080';
+  var customerId = '1234567890';  // TODO: Replace with your Google Ads Customer ID
   var campaignId = '21509897472';
   var adGroupId = '162629008222';
 
@@ -2397,7 +2621,7 @@ function executeMutationWithErrorExtraction(payload) {
  * Hypothesis: The 320x480 image failed because it's not a valid App Campaign dimension
  */
 function testImageMutationVariants() {
-  var customerId = '3342315080';
+  var customerId = '1234567890';  // TODO: Replace with your Google Ads Customer ID
   var campaignId = '21509897472';
   var adGroupId = '162629008222';
 
@@ -2821,7 +3045,7 @@ function testAddImage(customerId, adInfo, image, testName) {
  * No asset creation - only uses assets already in the account
  */
 function testExistingAssetMutation() {
-  var customerId = '3342315080';
+  var customerId = '1234567890';  // TODO: Replace with your Google Ads Customer ID
   var campaignId = '21509897472';
   var adGroupId = '162629008222';
 
@@ -3074,7 +3298,7 @@ function testExistingAssetMutation() {
  * Test mutations for all asset types with detailed success/failure reporting
  */
 function testMutationV2() {
-  var customerId = '3342315080';
+  var customerId = '1234567890';  // TODO: Replace with your Google Ads Customer ID
   var campaignId = '21509897472';
   var adGroupId = '162629008222';
 
@@ -3796,7 +4020,7 @@ function testImageUploadFromDrive() {
     }
   ];
 
-  var customerId = '3342315080';
+  var customerId = '1234567890';  // TODO: Replace with your Google Ads Customer ID
   var campaignId = '21509897472';
   var adGroupId = '162629008222';
 
@@ -3810,8 +4034,8 @@ function testImageUploadFromDrive() {
     Logger.log('3. Extract ID from URL: https://drive.google.com/file/d/FILE_ID/view');
     Logger.log('');
     Logger.log('Expected test images:');
-    Logger.log('- airalo-test-4-5.png (576x720, 4:5 ratio)');
-    Logger.log('- airalo-test-horizontal.png (1280x720, 16:9 ratio)');
+    Logger.log('- sample-image-4-5.png (576x720, 4:5 ratio)');
+    Logger.log('- sample-image-horizontal.png (1280x720, 16:9 ratio)');
     return;
   }
 
@@ -4052,7 +4276,7 @@ function findUploadedImageAssets() {
   Logger.log('');
 
   // Search criteria - updated with successful upload names
-  var searchPatterns = ['TestUpload', 'Test_4x5', 'Test_16x9', 'airalo', '66554477', '66554488'];
+  var searchPatterns = ['TestUpload', 'Test_4x5', 'Test_16x9', 'sample', '66554477', '66554488'];
   var targetDimensions = ['576x720', '1280x720'];  // Our test image dimensions
   var maxFileSizeKB = 20;  // Our test images were 14-15 KB
 
@@ -4355,7 +4579,7 @@ function logAssetDetailsById(assetIds) {
  * @param {boolean} addToAd - Whether to also add the asset to the ad
  */
 function testYouTubeVideoAssetCreation(youtubeVideoId, addToAd) {
-  var customerId = '3342315080';
+  var customerId = '1234567890';  // TODO: Replace with your Google Ads Customer ID
   var campaignId = '21509897472';
   var adGroupId = '162629008222';
 
@@ -4505,7 +4729,7 @@ function testYouTubeVideoAssetCreation(youtubeVideoId, addToAd) {
  * 2. Headlines + Images (text + media)
  */
 function testBatchMutation() {
-  var customerId = '3342315080';
+  var customerId = '1234567890';  // TODO: Replace with your Google Ads Customer ID
   var campaignId = '21509897472';
   var adGroupId = '162629008222';
 

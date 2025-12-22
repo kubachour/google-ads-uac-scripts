@@ -1,5 +1,7 @@
 # App Campaign Asset Mutation Guide
 
+> **Note:** All customer IDs, asset IDs, campaign IDs, and resource names in this document are placeholder examples. Replace `1234567890` with your actual Google Ads Customer ID (without dashes) before use.
+
 ## Overview
 
 This document provides complete technical guidance for programmatically modifying assets (text, images, videos) in Google Ads App campaigns using the Google Ads API and Google Ads Scripts.
@@ -1050,16 +1052,16 @@ function testMutationSetup() {
 ```javascript
 // Tested: 2025-12-19
 // Result: SUCCESS
-// Resource: customers/3342315080/ads/707391445617
+// Resource: customers/1234567890/ads/123456789012
 
 var payload = {
   adOperation: {
     update: {
-      resourceName: 'customers/3342315080/ads/707391445617',
+      resourceName: 'customers/1234567890/ads/123456789012',
       appAd: {
         youtubeVideos: [
-          { asset: 'customers/3342315080/assets/150592116554' },  // existing
-          { asset: 'customers/3342315080/assets/11289238226' }    // added
+          { asset: 'customers/1234567890/assets/150592116554' },  // existing
+          { asset: 'customers/1234567890/assets/11289238226' }    // added
         ]
       }
     },
@@ -1081,12 +1083,12 @@ var result = AdsApp.mutate(payload);
 var payload = {
   adOperation: {
     update: {
-      resourceName: 'customers/3342315080/ads/707391445617',
+      resourceName: 'customers/1234567890/ads/123456789012',
       appAd: {
         images: [
-          { asset: 'customers/3342315080/assets/154197473570' },
-          { asset: 'customers/3342315080/assets/154197475262' },
-          { asset: 'customers/3342315080/assets/154210211026' }
+          { asset: 'customers/1234567890/assets/154197473570' },
+          { asset: 'customers/1234567890/assets/154197475262' },
+          { asset: 'customers/1234567890/assets/154210211026' }
         ]
       }
     },
@@ -1108,14 +1110,14 @@ var result = AdsApp.mutate(payload);
 var payload = {
   adOperation: {
     update: {
-      resourceName: 'customers/3342315080/ads/707391445617',
+      resourceName: 'customers/1234567890/ads/123456789012',
       appAd: {
         images: [
-          { asset: 'customers/3342315080/assets/154251627588' },
-          { asset: 'customers/3342315080/assets/154197473570' },
-          { asset: 'customers/3342315080/assets/154197475262' },
-          { asset: 'customers/3342315080/assets/154210211026' },
-          { asset: 'customers/3342315080/assets/11271644515' }  // 1200x628 - SUCCESS
+          { asset: 'customers/1234567890/assets/154251627588' },
+          { asset: 'customers/1234567890/assets/154197473570' },
+          { asset: 'customers/1234567890/assets/154197475262' },
+          { asset: 'customers/1234567890/assets/154210211026' },
+          { asset: 'customers/1234567890/assets/11271644515' }  // 1200x628 - SUCCESS
         ]
       }
     },
@@ -1138,11 +1140,11 @@ var result = AdsApp.mutate(payload);
 var payload = {
   adOperation: {
     update: {
-      resourceName: 'customers/3342315080/ads/707391445617',
+      resourceName: 'customers/1234567890/ads/123456789012',
       appAd: {
         images: [
           // ... existing images ...
-          { asset: 'customers/3342315080/assets/11283575898' }  // 768x1024 - FAILED
+          { asset: 'customers/1234567890/assets/11283575898' }  // 768x1024 - FAILED
         ]
       }
     },

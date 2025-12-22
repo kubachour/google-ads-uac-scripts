@@ -32,16 +32,17 @@ var CONFIG_SPREADSHEET_URL = null; // Using hardcoded playlists
  * OUTPUT SPREADSHEET - where video data will be written
  * Can be same as CONFIG_SPREADSHEET_URL or a different sheet
  */
-var OUTPUT_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1PPSm4YGrAnj82iV8fIT1nGAhZ9aPxDGlgXTD5jgMJfM/edit';
+// TODO: Replace with your actual spreadsheet URL
+var OUTPUT_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID_HERE/edit';
 
 /**
  * HARDCODED PLAYLISTS FOR TESTING
- * Replace with your actual playlist IDs
+ * TODO: Replace these placeholder IDs with your actual YouTube playlist IDs
+ * Format: 'language_code': 'PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
  */
 var HARDCODED_PLAYLISTS = {
-  'en': 'PLVU9ym2yKP7mARwk9-NYtxRHSmZQA9jGl',  // English playlist
-  'de': 'PLVU9ym2yKP7mRMxxBlg8qYDAv4FHnAx_u',  // German playlist 
-  // 'de': 'PLzzzzzzzzzzzzzzzzzz',  // German playlist (uncomment when ready)
+  'en': 'PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',  // TODO: Replace with your English playlist ID
+  'de': 'PLyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy',  // TODO: Replace with your German playlist ID
 };
 
 /**
@@ -52,7 +53,84 @@ var CONFIG = {
   secrets: {},
   playlists: {},
 
-  // Static configuration (Google Ads constraints)
+  // ============================================================================
+  // GOOGLE ADS SETTINGS
+  // ============================================================================
+  // TODO: Replace all IDs below with your actual Google Ads account values
+  GOOGLE_ADS: {
+    CUSTOMER_ID: '1234567890',  // TODO: Replace with your Google Ads Customer ID (no dashes)
+    CAMPAIGNS: [
+      {
+        id: '12345678901',           // TODO: Replace with your Campaign ID
+        adGroupId: '123456789012',   // TODO: Replace with your Ad Group ID
+        name: 'Test Campaign',
+        geo: 'US',
+        language: 'EN'
+      }
+      // Add more campaigns as needed
+    ]
+  },
+
+  // ============================================================================
+  // SHEETS REPOSITORY
+  // ============================================================================
+  SHEETS: {
+    // Main spreadsheet for all automation data
+    SPREADSHEET_ID: null,  // Set this to your spreadsheet ID
+
+    // Sheet names
+    CHANGE_REQUESTS: 'ChangeRequests',
+    ASSET_REGISTRY: 'AssetRegistry',
+    PERFORMANCE_SNAPSHOTS: 'PerformanceSnapshots',
+    TEXT_EXAMPLES: 'TextExamples',
+    CAMPAIGN_CONFIG: 'CampaignConfig',
+    PROCESSED_FILES: 'ProcessedFiles'
+  },
+
+  // ============================================================================
+  // DRIVE SOURCE (Image Discovery)
+  // ============================================================================
+  DRIVE: {
+    // Parent folder containing campaign subfolders
+    PARENT_FOLDER_ID: null,  // Set this to your Drive folder ID
+
+    // How to match folder names to campaigns
+    // Options: 'FOLDER_NAME' (folder name = campaign name) or 'SHEET_LOOKUP'
+    FOLDER_MATCHING: 'FOLDER_NAME'
+  },
+
+  // ============================================================================
+  // DECISION ENGINE RULES
+  // ============================================================================
+  DECISION: {
+    // Auto-remove LOW performers after these thresholds
+    AUTO_REMOVE_MIN_DAYS: 7,
+    AUTO_REMOVE_MIN_IMPRESSIONS: 1000,
+
+    // Auto-add replacement when removing LOW
+    AUTO_ADD_REPLACEMENT: true,
+
+    // Performance labels to skip (don't touch these)
+    SKIP_LABELS: ['PENDING', 'LEARNING', 'BEST'],
+
+    // Labels that trigger auto-removal
+    AUTO_REMOVE_LABELS: ['LOW'],
+
+    // Labels that require manual approval for replacement
+    MANUAL_APPROVAL_LABELS: ['GOOD']
+  },
+
+  // ============================================================================
+  // SLACK NOTIFICATIONS
+  // ============================================================================
+  SLACK: {
+    WEBHOOK_URL: null,  // Set this to your Slack webhook URL
+    ENABLED: false
+  },
+
+  // ============================================================================
+  // STATIC CONFIGURATION (Google Ads constraints)
+  // ============================================================================
   LIMITS: {
     MAX_HEADLINES: 5,
     MIN_HEADLINES: 2,

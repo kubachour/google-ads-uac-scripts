@@ -1,129 +1,209 @@
-# App Campaign Asset Automation - Google Apps Script
+# Google Ads App Campaign Asset Automation
 
-## Setup Instructions
+Google Apps Script toolkit for automating asset management in Google Ads App (UAC) campaigns. Syncs videos from YouTube playlists, parses structured filenames for metadata, and manages campaign assets programmatically.
 
-### 1. Create Google Apps Script Project
+> **Note:** All IDs in this codebase are placeholders. Replace customer IDs, playlist IDs, and spreadsheet URLs with your actual values before use.
 
-1. Go to [script.google.com](https://script.google.com)
-2. Click "New project"
-3. Rename project to "App Campaign Asset Automation"
+---
 
-### 2. Copy Script Files
+## What This Does
 
-Copy the contents of each `.gs` file into separate files in the Apps Script editor:
+1. **YouTube Sync** - Fetches videos from configured playlists, extracts metadata from titles/descriptions
+2. **Filename Parsing** - Parses structured filenames like `Alex-DiscoverMaps-Sep25_c-Alex_s-Fiverr_d-Sep25_t-Video_m-DiscoverMaps_9x16.mp4` into creator, source, date, format, and message theme
+3. **Google Ads Integration** - Creates and manages assets (images, videos, headlines, descriptions) in App campaigns
+4. **Performance Tracking** - Queries asset performance data and outputs to Google Sheets
+5. **Decision Engine** - Analyzes performance and recommends asset replacements
+6. **Change Management** - Tracks and executes approved asset changes
 
-- `Config.gs` - Configuration and secrets management
-- `YouTubeClient.gs` - YouTube API client
-- `Main.gs` - Main entry points and sync logic
-
-### 3. Update appsscript.json
-
-1. In Apps Script editor, click the gear icon (Project Settings)
-2. Check "Show 'appsscript.json' manifest file in editor"
-3. Click on `appsscript.json` in the file list
-4. Replace contents with the provided `appsscript.json`
-
-### 4. Enable YouTube API
-
-1. In Apps Script editor, click "Services" (+ icon in left panel)
-2. Find "YouTube Data API v3"
-3. Click "Add"
-4. Make sure the identifier is set to "YouTube"
-
-### 5. Set Script Properties
-
-1. In Apps Script editor, click gear icon (Project Settings)
-2. Scroll to "Script Properties"
-3. Click "Add script property"
-4. Add the following property:
-
-| Property | Value |
-|----------|-------|
-| `YOUTUBE_PLAYLIST_ID` | Your YouTube playlist ID |
-
-**How to find playlist ID:**
-- Open your YouTube playlist
-- URL will be like: `youtube.com/playlist?list=PLxxxxxxxxxxxxxx`
-- The `PLxxxxxxxxxxxxxx` part is your playlist ID
-
-### 6. Authorize the Script
-
-1. In Apps Script editor, select `testGetPlaylistInfo` from the function dropdown
-2. Click "Run"
-3. Follow the authorization prompts
-4. Grant access to YouTube
-
-### 7. Test the Setup
-
-Run these test functions in order:
-
-1. `testGetPlaylistInfo` - Verifies playlist access
-2. `testGetPlaylistVideos` - Lists videos in playlist
-3. `testParseFilename` - Tests filename parsing logic
-4. `testSyncSourceAssets` - Runs full sync (without Notion)
+---
 
 ## File Structure
 
 ```
 src/
-├── appsscript.json      # Project manifest
-├── Config.gs            # Configuration constants
-├── YouTubeClient.gs     # YouTube API client
-├── Main.gs              # Main entry points
-└── README.md            # This file
+├── Config.gs              # Configuration, secrets, playlist mappings
+├── Main.gs                # Entry points, orchestration, test functions
+├── YouTubeClient.gs       # YouTube Data API integration
+├── GoogleAdsClient.gs     # Google Ads API queries and mutations
+├── SheetsRepository.gs    # Google Sheets data persistence
+├── DecisionEngine.gs      # Performance analysis and recommendations
+├── ChangeRequestManager.gs # Asset change workflow management
+├── DriveSource.gs         # Google Drive image handling
+└── SlackClient.gs         # Slack notifications
 ```
 
-## Usage
+---
 
-### Manual Run
+## Installation
 
-Run `syncSourceAssets()` to manually sync videos from the YouTube playlist.
+1. Go to [script.google.com](https://script.google.com) and create a new project
+2. Copy each `.gs` file content into separate files in the editor (keep the same names)
+3. Click gear icon > check "Show appsscript.json" > replace with provided manifest
+4. Click "Services" (+) > add "YouTube Data API v3" with identifier "YouTube"
+5. Update `Config.gs` with your playlist IDs, spreadsheet URL, and Google Ads IDs
+6. Select `main()` from dropdown and click "Run" to authorize
+7. Run `testGetPlaylistInfo()` to verify YouTube access
 
-### View Logs
+---
 
-After running any function:
-1. Click "Execution log" at the bottom of the editor
-2. Or go to "Executions" in the left menu for historical logs
+## Configuration
 
-## Next Steps
+Edit these values in `Config.gs`:
 
-After YouTube sync is working:
+```javascript
+// Your output spreadsheet
+var OUTPUT_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/YOUR_ID/edit';
 
-1. Add Notion integration (`NotionClient.gs`)
-2. Add Source Queue management
-3. Add Slack notifications
-4. Set up scheduled triggers
+// Your YouTube playlists by language
+var HARDCODED_PLAYLISTS = {
+  'en': 'PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+  'de': 'PLyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy',
+};
+
+// Your Google Ads account
+GOOGLE_ADS: {
+  CUSTOMER_ID: '1234567890',  // No dashes
+  CAMPAIGNS: [{ id: '...', adGroupId: '...', name: '...', geo: 'US', language: 'EN' }]
+}
+```
+
+---
+
+## Filename Convention
+
+Assets use a structured naming format for automatic metadata extraction:
+
+```
+CreativeName_c-Creator_s-Source_d-Date_t-Type_m-Message_FORMAT.ext
+```
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `c-` | Creator name | `c-Alex` |
+| `s-` | Source/agency | `s-Fiverr`, `s-Internal` |
+| `d-` | Production date | `d-Sep25` |
+| `t-` | Asset type | `t-Video`, `t-Static` |
+| `m-` | Message/theme | `m-DiscoverMaps` |
+| Format suffix | Aspect ratio | `9x16`, `16x9`, `1x1`, `4x5` |
+
+---
+
+## Best Practices for UAC Scripts
+
+### Script Environment Constraints
+
+- **Single execution context** - All code runs from one entry point (`main()` or trigger function). No module imports, no external JSON files
+- **6-minute execution limit** - Long operations need checkpointing via `PropertiesService` or Sheets
+- **No `PropertiesService` in Ads Scripts** - Use a config spreadsheet or hardcode values
+
+### Asset Mutations
+
+App campaign assets ARE mutable via API. Use `AdService` with correct `updateMask`:
+
+```javascript
+var payload = {
+  adOperation: {
+    update: {
+      resourceName: 'customers/1234567890/ads/123456789012',
+      appAd: {
+        headlines: [
+          { text: 'Headline One' },
+          { text: 'Headline Two' }
+        ]
+      }
+    },
+    updateMask: 'app_ad.headlines'  // Critical: must match the field being updated
+  }
+};
+AdsApp.mutate(payload);
+```
+
+### Update Mask Reference
+
+| Asset Type | Update Mask |
+|------------|-------------|
+| Headlines | `app_ad.headlines` |
+| Descriptions | `app_ad.descriptions` |
+| Images | `app_ad.images` |
+| Videos | `app_ad.youtube_videos` |
+
+### Proven Gotchas
+
+**Temporary Asset IDs (`-1`)**
+- Asset creation may return `customers/xxx/assets/-1` instead of a real ID
+- Cause 1: Running in "Preview" mode instead of "Run" - mutations don't execute
+- Cause 2: Duplicate content - Google deduplicates identical images and returns `-1`
+- Solution: Always use "Run", and add unique identifiers (timestamps) to asset names
+
+**Image Aspect Ratios**
+- App campaigns only accept specific ratios: `1.91:1`, `1:1`, `4:5`
+- Other ratios (3:4, 1.5:1) fail with `ASPECT_RATIO_NOT_ALLOWED`
+- Validate dimensions before upload
+
+**Asset Arrays Are Replaced, Not Appended**
+- When updating `images` or `youtubeVideos`, you must include ALL assets you want to keep
+- Omitting existing assets removes them from the ad
+
+```javascript
+// WRONG: This removes all existing images except the new one
+appAd: { images: [{ asset: 'new-asset-id' }] }
+
+// RIGHT: Include existing assets + new one
+appAd: { images: [
+  { asset: 'existing-1' },
+  { asset: 'existing-2' },
+  { asset: 'new-asset-id' }
+]}
+```
+
+**YouTube Video Assets**
+- Videos must be public or unlisted (not private)
+- YouTube asset creation returns real IDs immediately (unlike images)
+- Use `youtubeVideoAsset.youtubeVideoId` with just the video ID, not full URL
+
+**Text Assets Use Different Format**
+- Headlines/descriptions use `{ text: 'content' }` format
+- Images/videos use `{ asset: 'resource-name' }` format
+
+**Error Extraction**
+- Failed mutations don't throw - check `result.isSuccessful()`
+- Error details are in `result.sc.Ia.errors` (undocumented structure)
+
+```javascript
+if (!result.isSuccessful() && result.sc && result.sc.Ia) {
+  result.sc.Ia.errors.forEach(function(err) {
+    Logger.log('Error: ' + JSON.stringify(err.errorCode) + ' - ' + err.message);
+  });
+}
+```
+
+---
+
+## Working API Calls
+
+See `successful-ad-scripts-calls.md` for tested, working code examples including:
+- Image upload from Google Drive
+- YouTube video asset creation
+- Adding/removing assets from ads
+- Headline and description updates
+- Batch mutations
+
+See `app-campaign-asset-mutation-guide.md` for comprehensive API reference.
+
+---
 
 ## Troubleshooting
 
-### "YouTube is not defined"
+| Error | Cause | Solution |
+|-------|-------|----------|
+| "YouTube is not defined" | API not enabled | Add YouTube Data API v3 in Services |
+| "Playlist not found" | Private playlist or wrong ID | Make playlist public/unlisted, verify ID |
+| "Quota exceeded" | Over 10,000 units/day | Wait 24h for reset |
+| `ASPECT_RATIO_NOT_ALLOWED` | Wrong image dimensions | Use 1.91:1, 1:1, or 4:5 ratios |
+| Asset ID is `-1` | Preview mode or duplicate | Use "Run" mode, add unique identifiers |
 
-- Make sure YouTube Data API v3 is enabled in Services
-- Check that `appsscript.json` has the YouTube service configured
+---
 
-### "Access denied" or "Playlist not found"
+## License
 
-- Verify the playlist is public or unlisted (not private)
-- Check that the playlist ID is correct
-- Make sure you authorized the script
-
-### "Quota exceeded"
-
-- YouTube API has a daily quota of 10,000 units
-- Each playlist item list costs ~1 unit
-- Each video details request costs ~1 unit
-- Wait 24 hours for quota reset
-
-## API Quota Usage
-
-| Operation | Cost |
-|-----------|------|
-| Get playlist info | 1 unit |
-| List playlist items (50 per page) | 1 unit |
-| Get video details (50 per batch) | 1 unit |
-
-For a playlist with 100 videos:
-- Playlist info: 1 unit
-- Playlist items: 2 units (2 pages of 50)
-- Video details: 2 units (2 batches of 50)
-- **Total: ~5 units per sync**
+MIT

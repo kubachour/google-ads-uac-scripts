@@ -2,6 +2,8 @@
 
 This document contains all tested and confirmed working Google Ads Scripts API calls for App Campaign asset mutations.
 
+> **Note:** All customer IDs, asset IDs, and resource names in this document are placeholder examples. Replace `1234567890` with your actual Google Ads Customer ID (without dashes) before use.
+
 ---
 
 ## Asset Creation
@@ -34,17 +36,17 @@ function uploadImageAssetFromDrive(fileId, assetName) {
 
   var result = AdsApp.mutate(payload);
   // result.isSuccessful() = true
-  // result.getResourceName() = 'customers/3342315080/assets/-1' (temporary ID)
+  // result.getResourceName() = 'customers/1234567890/assets/-1' (temporary ID)
 }
 ```
 
 **Log Output:**
 ```
-File: airalo-test-4-5.png
+File: sample-image-4-5.png
 MIME type: image/png
 Size: 6 KB
 RESULT: SUCCESS
-Asset Resource Name: customers/3342315080/assets/-1
+Asset Resource Name: customers/1234567890/assets/-1
 ```
 
 **Note:** If the returned resource name contains `-1` (temporary ID), it may be because:
@@ -109,16 +111,16 @@ function addImageToAd(customerId, adId, currentImages, newAssetResourceName) {
 
 **Log Output (SUCCESS):**
 ```
-File: airalo-test-4-5-id-66554477.png
+File: sample-image-4-5-id-66554477.png
 MIME type: image/png
 Size: 14425 bytes (14 KB)
 Asset name: TestUpload_id-901_fm-unknown.png_1766148002307
 RESULT: SUCCESS
-Asset Resource Name: customers/3342315080/assets/318024427603
+Asset Resource Name: customers/1234567890/assets/318024427603
 
 --- Adding to Ad ---
 SUCCESS
-Resource: customers/3342315080/ads/707391445617
+Resource: customers/1234567890/ads/123456789012
 ADD TO AD: SUCCESS
 ```
 
@@ -133,8 +135,8 @@ ADD TO AD: SUCCESS
 
 ```javascript
 // Step 1: Create YouTube Video Asset
-var customerId = '3342315080';
-var youtubeVideoId = '2Kzreb1nvV8';
+var customerId = '1234567890';  // TODO: Replace with your Customer ID
+var youtubeVideoId = 'xXxExAmPlExXx';
 var assetName = 'TestVideo_' + youtubeVideoId + '_' + Date.now();
 
 var assetPayload = {
@@ -152,14 +154,14 @@ var assetPayload = {
 
 var result = AdsApp.mutate(assetPayload);
 // result.isSuccessful() = true
-// result.getResourceName() = 'customers/3342315080/assets/317946076202'
+// result.getResourceName() = 'customers/1234567890/assets/317946076202'
 ```
 
 **Log Output:**
 ```
-Asset Name: TestVideo_2Kzreb1nvV8_1766152235270
+Asset Name: TestVideo_xXxExAmPlExXx_1766152235270
 RESULT: SUCCESS
-Asset Resource Name: customers/3342315080/assets/317946076202
+Asset Resource Name: customers/1234567890/assets/317946076202
 ```
 
 **Key insight:** Unlike image uploads, YouTube video assets return a real asset ID immediately (not `-1`). The video must be public or unlisted on YouTube.
@@ -173,18 +175,18 @@ Asset Resource Name: customers/3342315080/assets/317946076202
 
 ```javascript
 // Step 1: Create the asset (see above)
-var assetResourceName = 'customers/3342315080/assets/317946076202';
+var assetResourceName = 'customers/1234567890/assets/317946076202';
 
 // Step 2: Add to Ad (append to existing videos)
 var adPayload = {
   adOperation: {
     update: {
-      resourceName: 'customers/3342315080/ads/707391445617',
+      resourceName: 'customers/1234567890/ads/123456789012',
       appAd: {
         youtubeVideos: [
-          { asset: 'customers/3342315080/assets/150592116554' },  // existing
-          { asset: 'customers/3342315080/assets/11289238226' },   // existing
-          { asset: 'customers/3342315080/assets/317946076202' }   // newly created
+          { asset: 'customers/1234567890/assets/150592116554' },  // existing
+          { asset: 'customers/1234567890/assets/11289238226' },   // existing
+          { asset: 'customers/1234567890/assets/317946076202' }   // newly created
         ]
       }
     },
@@ -199,7 +201,7 @@ var result = AdsApp.mutate(adPayload);
 **Log Output:**
 ```
 Asset Creation: SUCCESS
-Asset Resource: customers/3342315080/assets/317946076202
+Asset Resource: customers/1234567890/assets/317946076202
 Add to Ad: SUCCESS
 ```
 
@@ -216,11 +218,11 @@ Add to Ad: SUCCESS
 var payload = {
   adOperation: {
     update: {
-      resourceName: 'customers/3342315080/ads/707391445617',
+      resourceName: 'customers/1234567890/ads/123456789012',
       appAd: {
         youtubeVideos: [
-          { asset: 'customers/3342315080/assets/150592116554' },  // existing
-          { asset: 'customers/3342315080/assets/11289238226' }    // added
+          { asset: 'customers/1234567890/assets/150592116554' },  // existing
+          { asset: 'customers/1234567890/assets/11289238226' }    // added
         ]
       }
     },
@@ -230,7 +232,7 @@ var payload = {
 
 var result = AdsApp.mutate(payload);
 // result.isSuccessful() = true
-// result.getResourceName() = 'customers/3342315080/ads/707391445617'
+// result.getResourceName() = 'customers/1234567890/ads/123456789012'
 ```
 
 ---
@@ -245,12 +247,12 @@ var result = AdsApp.mutate(payload);
 var payload = {
   adOperation: {
     update: {
-      resourceName: 'customers/3342315080/ads/707391445617',
+      resourceName: 'customers/1234567890/ads/123456789012',
       appAd: {
         images: [
-          { asset: 'customers/3342315080/assets/154197473570' },
-          { asset: 'customers/3342315080/assets/154197475262' },
-          { asset: 'customers/3342315080/assets/154210211026' }
+          { asset: 'customers/1234567890/assets/154197473570' },
+          { asset: 'customers/1234567890/assets/154197475262' },
+          { asset: 'customers/1234567890/assets/154210211026' }
         ]
       }
     },
@@ -273,14 +275,14 @@ var result = AdsApp.mutate(payload);
 var payload = {
   adOperation: {
     update: {
-      resourceName: 'customers/3342315080/ads/707391445617',
+      resourceName: 'customers/1234567890/ads/123456789012',
       appAd: {
         images: [
-          { asset: 'customers/3342315080/assets/154251627588' },
-          { asset: 'customers/3342315080/assets/154197473570' },
-          { asset: 'customers/3342315080/assets/154197475262' },
-          { asset: 'customers/3342315080/assets/154210211026' },
-          { asset: 'customers/3342315080/assets/11271644515' }  // 1200x628 added
+          { asset: 'customers/1234567890/assets/154251627588' },
+          { asset: 'customers/1234567890/assets/154197473570' },
+          { asset: 'customers/1234567890/assets/154197475262' },
+          { asset: 'customers/1234567890/assets/154210211026' },
+          { asset: 'customers/1234567890/assets/11271644515' }  // 1200x628 added
         ]
       }
     },
@@ -303,11 +305,11 @@ var result = AdsApp.mutate(payload);
 var payload = {
   adOperation: {
     update: {
-      resourceName: 'customers/3342315080/ads/707391445617',
+      resourceName: 'customers/1234567890/ads/123456789012',
       appAd: {
         images: [
           // ... existing images ...
-          { asset: 'customers/3342315080/assets/SQUARE_IMAGE_ID' }  // 720x720 added
+          { asset: 'customers/1234567890/assets/SQUARE_IMAGE_ID' }  // 720x720 added
         ]
       }
     },
@@ -330,7 +332,7 @@ var result = AdsApp.mutate(payload);
 var payload = {
   adOperation: {
     update: {
-      resourceName: 'customers/3342315080/ads/707391445617',
+      resourceName: 'customers/1234567890/ads/123456789012',
       appAd: {
         headlines: [
           { text: 'Headline One' },
