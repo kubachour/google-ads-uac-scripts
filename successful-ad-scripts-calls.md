@@ -11,7 +11,7 @@ This document contains all tested and confirmed working Google Ads Scripts API c
 ### IMAGE: Upload from Google Drive - SUCCESS
 
 **Tested:** 2025-12-19
-**Result:** Asset created successfully (returns temporary ID -1, need to query for actual ID)
+**Result:** Asset created successfully (returns ID -1 if only previewing)
 
 ```javascript
 function uploadImageAssetFromDrive(fileId, assetName) {
@@ -48,13 +48,6 @@ Size: 6 KB
 RESULT: SUCCESS
 Asset Resource Name: customers/1234567890/assets/-1
 ```
-
-**Note:** If the returned resource name contains `-1` (temporary ID), it may be because:
-1. **Preview mode**: Running as "Preview" instead of "Run" doesn't execute mutations, so no real ID is assigned
-2. **Deduplication**: Google may deduplicate identical image content with an existing asset
-
-Always use "Run" (not "Preview") to get real asset IDs.
-
 ---
 
 ### IMAGE: Upload from Drive + Add to Ad - FULL SUCCESS
@@ -124,8 +117,6 @@ Resource: customers/1234567890/ads/123456789012
 ADD TO AD: SUCCESS
 ```
 
-**Key insight:** To get a real asset ID (not `-1`), the image content must be UNIQUE. If identical content exists, Google deduplicates and returns `-1`.
-
 ---
 
 ### YOUTUBE VIDEO: Create Asset from Video ID - SUCCESS
@@ -164,7 +155,7 @@ RESULT: SUCCESS
 Asset Resource Name: customers/1234567890/assets/317946076202
 ```
 
-**Key insight:** Unlike image uploads, YouTube video assets return a real asset ID immediately (not `-1`). The video must be public or unlisted on YouTube.
+The video must be public or unlisted on YouTube.
 
 ---
 
@@ -389,23 +380,9 @@ Error Message: The aspect ratio of the image does not match the expected aspect 
 
 | Issue | Details |
 |-------|---------|
-| Temporary Asset IDs | Asset creation returns `-1` as resource name. Cannot use immediately in mutations. |
 | Aspect Ratio | Images must match campaign's allowed ratios (1.91:1, 1:1, 4:5 for tested campaign) |
 | 3:4 Ratio | 768x1024 images rejected with `ASPECT_RATIO_NOT_ALLOWED` |
 | 1.5:1 Ratio | 480x320 images rejected with `ASPECT_RATIO_NOT_ALLOWED` |
-
----
-
-## Working Aspect Ratios for Test Campaign
-
-| Ratio | Dimensions | Status |
-|-------|------------|--------|
-| 1.91:1 | 1200x628 | SUCCESS |
-| 16:9 | 1280x720 | SUCCESS |
-| 1:1 | 720x720, 1200x1200 | SUCCESS |
-| 4:5 | 576x720 | SUCCESS (upload) |
-| 3:4 | 768x1024 | FAILED |
-| 1.5:1 | 480x320 | FAILED |
 
 ---
 
