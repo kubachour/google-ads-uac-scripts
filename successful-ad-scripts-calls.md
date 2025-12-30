@@ -376,6 +376,70 @@ Error Message: The aspect ratio of the image does not match the expected aspect 
 
 ---
 
+## Asset Performance Queries
+
+### HEADLINE/DESCRIPTION: Get App Asset Performance - SUCCESS
+
+**Tested:** 2025-12-30
+**Result:** Successfully retrieved headline and description asset performance data for App campaigns
+
+```javascript
+function getAppAssetPerformance() {
+  var today = Utilities.formatDate(new Date(), AdsApp.currentAccount().getTimeZone(), 'yyyy-MM-dd');
+  var startDate = '2025-01-01';  // Adjust as needed
+
+  var query =
+    "SELECT " +
+      "campaign.id, " +
+      "campaign.name, " +
+      "ad_group_ad_asset_view.field_type, " +
+      "ad_group_ad_asset_view.performance_label, " +
+      "ad_group_ad_asset_view.enabled, " +
+      "asset.text_asset.text, " +
+      "metrics.impressions, " +
+      "metrics.conversions " +
+    "FROM ad_group_ad_asset_view " +
+    "WHERE campaign.advertising_channel_type = 'MULTI_CHANNEL' " +
+    "AND campaign.advertising_channel_sub_type = 'APP_CAMPAIGN' " +
+    "AND campaign.status = 'ENABLED' " +
+    "AND ad_group_ad_asset_view.field_type IN ('HEADLINE', 'DESCRIPTION') " +
+    "AND segments.date BETWEEN '" + startDate + "' AND '" + today + "'";
+
+  var result = AdsApp.search(query);
+
+  while (result.hasNext()) {
+    var row = result.next();
+
+    var campaignId = row.campaign.id;
+    var campaignName = row.campaign.name;
+    var fieldType = row.adGroupAdAssetView.fieldType;           // 'HEADLINE' or 'DESCRIPTION'
+    var performanceLabel = row.adGroupAdAssetView.performanceLabel;  // 'BEST', 'GOOD', 'LOW', 'LEARNING', 'UNKNOWN'
+    var isEnabled = row.adGroupAdAssetView.enabled;             // true/false
+    var assetText = row.asset.textAsset ? row.asset.textAsset.text : '';
+    var impressions = row.metrics.impressions || 0;
+    var conversions = row.metrics.conversions || 0;
+
+    Logger.log('Campaign: ' + campaignName);
+    Logger.log('Type: ' + fieldType + ' | Text: ' + assetText);
+    Logger.log('Performance: ' + performanceLabel + ' | Enabled: ' + isEnabled);
+    Logger.log('Impressions: ' + impressions + ' | Conversions: ' + conversions);
+  }
+}
+```
+
+**Available Fields:**
+
+| Field | Description |
+|-------|-------------|
+| `ad_group_ad_asset_view.field_type` | Asset type: `HEADLINE`, `DESCRIPTION`, `YOUTUBE_VIDEO`, `IMAGE`, etc. |
+| `ad_group_ad_asset_view.performance_label` | Performance rating: `BEST`, `GOOD`, `LOW`, `LEARNING`, `PENDING`, `UNKNOWN` |
+| `ad_group_ad_asset_view.enabled` | Whether asset is enabled (true/false) |
+| `asset.text_asset.text` | The actual text content (for HEADLINE/DESCRIPTION) |
+
+**Note:** The `segments.date` filter requires both start AND end dates (BETWEEN). Using only `>=` will fail with `EXPECTED_FILTERS_ON_DATE_RANGE` error.
+
+---
+
 ## Known Limitations
 
 | Issue | Details |
